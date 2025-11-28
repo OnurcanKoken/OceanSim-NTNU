@@ -169,3 +169,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+isaacsim/oceansim/utils/asset_path.json
