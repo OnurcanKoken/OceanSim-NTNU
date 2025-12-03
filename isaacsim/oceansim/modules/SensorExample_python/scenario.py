@@ -24,6 +24,8 @@ class MHL_Sensor_Example_Scenario():
         self._DVL = None
         self._baro = None
 
+        self._sonar3D = None
+
         self._ctrl_mode = None
 
         self._running_scenario = False
@@ -34,13 +36,14 @@ class MHL_Sensor_Example_Scenario():
         self._enable_ros2_control = True
         self._ros2_control_mode = "velocity control"
 
-    def setup_scenario(self, rob, sonar, cam, DVL, baro, ctrl_mode):
+    def setup_scenario(self, rob, sonar, cam, DVL, baro, ctrl_mode, sonar3D):
         self._rob = rob
         self._sonar = sonar
         self._cam = cam
         self._DVL = DVL
         self._baro = baro
         self._ctrl_mode = ctrl_mode
+        self._sonar3D = sonar3D
         if self._sonar is not None:
             self._sonar.sonar_initialize(include_unlabelled=True)
         if self._cam is not None:
@@ -153,7 +156,7 @@ class MHL_Sensor_Example_Scenario():
         if self._sonar is not None:
             self._sonar.close()
         if self._cam is not None:
-            self._cam.close()
+            self._cam.close()        
 
         # clear the keyboard subscription
         if self._ctrl_mode=="Manual control":
@@ -172,9 +175,12 @@ class MHL_Sensor_Example_Scenario():
         self._running_scenario = False
         self._time = 0.0
 
+        # Clear cache of 3D sonar too
+        if self._sonar3D is not None:
+            self._sonar3D.close()
+
 
     def update_scenario(self, step: float):
-
         
         if not self._running_scenario:
             return

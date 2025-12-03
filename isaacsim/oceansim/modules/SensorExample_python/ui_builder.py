@@ -395,7 +395,7 @@ class UIBuilder():
 
     def _reset_scenario(self):
         self._scenario.teardown_scenario()
-        self._scenario.setup_scenario(self._rob, self._sonar, self._cam, self._DVL, self._baro, self._ctrl_mode)
+        self._scenario.setup_scenario(self._rob, self._sonar, self._cam, self._DVL, self._baro, self._ctrl_mode, self._sonar3D)
     def _on_post_reset_btn(self):
         """
         This function is attached to the Reset Button as the post_reset_fn callback.
