@@ -156,6 +156,15 @@ class UIBuilder():
                 self._use_baro = False
                 self.wrapped_ui_elements.append(baro_check_box)
 
+                sonar3D_check_box = CheckBox(
+                    "3D Sonar",
+                    default_value=False,
+                    tooltip=' Click this checkbox to activate 3D sonar',
+                    on_click_fn=self._on_sonar3D_checkbox_click_fn
+                )
+                self._use_sonar3D = False
+                self.wrapped_ui_elements.append(sonar3D_check_box)
+
                 
         world_controls_frame = CollapsableFrame("World Controls", collapsed=False)
         self.frames.append(world_controls_frame)
@@ -206,6 +215,17 @@ class UIBuilder():
                 self._scenario_state_btn.enabled = False
                 self.wrapped_ui_elements.append(self._scenario_state_btn)
 
+        add_objects_frame = CollapsableFrame("Additional Objects", collapsed=False)
+        self.frames.append(add_objects_frame)
+        with add_objects_frame:
+            with ui.VStack(style=get_style(), spacing=5, height=0):
+                objects_check_box = CheckBox(
+                    "Yes Please",
+                    default_value=False,
+                    tooltip=" Click this checkbox to add more elements into the scene",
+                    on_click_fn=self._on_sonar_checkbox_click_fn,
+                )
+
         self.sensor_reading_frame = CollapsableFrame('Sensor Reading', collapsed=False, visible=False)
         self.frames.append(self.sensor_reading_frame)
         self.waypoints_frame = CollapsableFrame('Waypoints',collapsed=False, visible=False)
@@ -237,9 +257,15 @@ class UIBuilder():
         self._DVL_trans = np.array([0,0,-0.1])
         self._baro = None
         self._water_surface = 1.43389 # Arbitrary
+        self._sonar3D = None
+        self._sonar3D_trans = np.array([0, 0, 0.3])
+        self._sonar3D_rot = np.array([1.0, 0, 0, 0]) # Identity quaternion
         
         # Scenario
         self._scenario = MHL_Sensor_Example_Scenario()
+
+        # Additional Objects
+        self._add_objects = None
 
 
     def _setup_scene(self):
@@ -338,6 +364,18 @@ class UIBuilder():
 
             self._baro = BarometerSensor(prim_path=robot_prim_path + '/Baro',
                                         water_surface_z=self._water_surface)
+
+        if self._use_sonar3D:
+            from isaacsim.oceansim.sensors.Sonar3D import Sonar3D
+            self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+                                    translation=self._sonar3D_trans,
+                                    orientation=self._sonar3D_rot,
+                                    config_file_name="Example_Solid_State")
+        
+        # TODO             
+        if self._add_objects:
+            pass
+            
             
 
 
@@ -438,6 +476,10 @@ class UIBuilder():
     def _on_baro_checkbox_click_fn(self, model):
         self._use_baro = model
         print('Reload the scene for changes to take effect.')
+
+    def _on_sonar3D_checkbox_click_fn(self, model):
+        self._use_sonar3D = model
+        print('Reload the scene for changes to take effect.')    
     
     def _on_manual_ctrl_cb_click_fn(self, model):
         self._manual_ctrl = model
@@ -447,6 +489,9 @@ class UIBuilder():
         self._ctrl_mode = model
         print(f'Ctrl mode: {model}. Reload the scene for changes to take effect.')
 
+    def _on_add_objects_checkbox_click_fn(self, model):
+        self._add_objects = model
+        print('Reload the scene for changes to take effect.')
    
     def _add_extra_ui(self):
         with self.sensor_reading_frame:

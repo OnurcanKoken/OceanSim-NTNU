@@ -172,3 +172,4 @@ cython_debug/
 
 ### ME ###
 isaacsim/oceansim/utils/asset_path.json
+.github/copilot-instructions.md
