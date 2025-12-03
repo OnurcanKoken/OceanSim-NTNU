@@ -8,7 +8,8 @@ class Sonar3D(LidarRtx):
                          translation=translation,
                          orientation=orientation,
                          config_file_name=config_file_name)
-        
+    
+    def initialize(self):
         self.attach_writer('RtxLidarDebugDrawPointCloudBuffer')
         # self.attach_annotator('IsaacExtractRTXSensorPointCloudNoAccumulator')
 
@@ -16,10 +17,6 @@ class Sonar3D(LidarRtx):
         self.writer = rep.writers.get("RtxLidar" + "ROS2PublishPointCloud")
         self.writer.initialize(topicName="sonar3D_point_cloud", frameId="map")
         self.writer.attach([self._render_product_path])
-
-
-    def _draw_pointcloud_simulation(self):
-        self.attach_writer('RtxLidarDebugDrawPointCloudBuffer')
 
     def close(self):
         self.writer.detach()

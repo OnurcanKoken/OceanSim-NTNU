@@ -52,6 +52,9 @@ class MHL_Sensor_Example_Scenario():
             self._DVL_reading = [0.0, 0.0, 0.0]
         if self._baro is not None:
             self._baro_reading = 101325.0 # atmospheric pressure (Pa)
+        if self._sonar3D is not None:
+            print("Sonar initialize method being called")
+            self._sonar3D.initialize()
         
         
         # Apply the physx force schema if manual control
