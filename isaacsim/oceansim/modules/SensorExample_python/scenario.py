@@ -53,7 +53,6 @@ class MHL_Sensor_Example_Scenario():
         if self._baro is not None:
             self._baro_reading = 101325.0 # atmospheric pressure (Pa)
         if self._sonar3D is not None:
-            print("Sonar initialize method being called")
             self._sonar3D.initialize()
         
         

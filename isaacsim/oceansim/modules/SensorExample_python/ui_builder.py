@@ -9,7 +9,7 @@ import carb
 
 # Isaac sim import
 from isaacsim.core.prims import SingleRigidPrim, SingleGeometryPrim
-from isaacsim.core.utils.prims import get_prim_at_path
+from isaacsim.core.utils.prims import get_prim_at_path, create_prim
 from isaacsim.core.utils.stage import get_current_stage, add_reference_to_stage, create_new_stage, open_stage
 from isaacsim.core.utils.rotations import euler_angles_to_quat
 from isaacsim.core.utils.semantics import add_update_semantics
@@ -285,6 +285,11 @@ class UIBuilder():
             # add MHL scene as reference
             MHL_prim_path = '/World/mhl'
             MHL_usd_path = get_oceansim_assets_path() + "/collected_MHL/mhl_scaled.usd"
+
+            # MHL_usd_path = get_oceansim_assets_path() + "/collected_MHL/mhl_water.usd"
+            # MHL_usd_path = "/isaac-sim/OceanSim_assets/collected_MHL/mhl_water.usd"
+            # print(MHL_usd_path)
+            
             add_reference_to_stage(usd_path=MHL_usd_path, prim_path=MHL_prim_path)
             # Toggle MHL mesh's collider
             SingleGeometryPrim(prim_path=MHL_prim_path, collision=True)
@@ -367,10 +372,47 @@ class UIBuilder():
 
         if self._use_sonar3D:
             from isaacsim.oceansim.sensors.Sonar3D import Sonar3D
+            from isaacsim.oceansim.utils.sonar3D_attributes import sensor_attributes
+
             self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
                                     translation=self._sonar3D_trans,
                                     orientation=self._sonar3D_rot,
-                                    config_file_name="Example_Solid_State")
+                                    config_file_name="Example_Solid_State",
+                                    **sensor_attributes)
+
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name="Simple_Example_Solid_State")
+            
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name="OS2_REV6_128ch10hz512res")
+            
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name="WATER_LINKED_3D_SONAR")
+
+            # Not working for now, the generated .usd file doesnt have the "OmniSensorGenericLidarCoreAPI" api added by default
+            # create_prim(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
+            #             prim_type='OmniLidar', 
+            #             usd_path='data/WATER_LINKED_3D_SONAR.usd')
+            
+            # create_prim(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
+            #             prim_type='OmniLidar', 
+            #             usd_path='data/sonar3D_WaterLinked.usd')
+            
+            
+            
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name=None)
+
+            
+            
         
         # TODO             
         if self._add_objects:
