@@ -215,17 +215,6 @@ class UIBuilder():
                 self._scenario_state_btn.enabled = False
                 self.wrapped_ui_elements.append(self._scenario_state_btn)
 
-        add_objects_frame = CollapsableFrame("Additional Objects", collapsed=False)
-        self.frames.append(add_objects_frame)
-        with add_objects_frame:
-            with ui.VStack(style=get_style(), spacing=5, height=0):
-                objects_check_box = CheckBox(
-                    "Yes Please",
-                    default_value=False,
-                    tooltip=" Click this checkbox to add more elements into the scene",
-                    on_click_fn=self._on_sonar_checkbox_click_fn,
-                )
-
         self.sensor_reading_frame = CollapsableFrame('Sensor Reading', collapsed=False, visible=False)
         self.frames.append(self.sensor_reading_frame)
         self.waypoints_frame = CollapsableFrame('Waypoints',collapsed=False, visible=False)
@@ -264,9 +253,6 @@ class UIBuilder():
         # Scenario
         self._scenario = MHL_Sensor_Example_Scenario()
 
-        # Additional Objects
-        self._add_objects = None
-
 
     def _setup_scene(self):
         """
@@ -286,6 +272,7 @@ class UIBuilder():
             MHL_prim_path = '/World/mhl'
             MHL_usd_path = get_oceansim_assets_path() + "/collected_MHL/mhl_scaled.usd"
 
+            # MANUALLY IMPORT THE WATER ENVIRONMENT
             # MHL_usd_path = get_oceansim_assets_path() + "/collected_MHL/mhl_water.usd"
             # MHL_usd_path = "/isaac-sim/OceanSim_assets/collected_MHL/mhl_water.usd"
             # print(MHL_usd_path)
@@ -374,52 +361,17 @@ class UIBuilder():
             from isaacsim.oceansim.sensors.Sonar3D import Sonar3D
             from isaacsim.oceansim.utils.sonar3D_attributes import sensor_attributes
 
-            self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name="Example_Solid_State") # or Just Example_Solid_State
+            
+            self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D_none',
                                     translation=self._sonar3D_trans,
                                     orientation=self._sonar3D_rot,
-                                    config_file_name="Example_Solid_State",
-                                    **sensor_attributes)
-
-            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
-            #                         translation=self._sonar3D_trans,
-            #                         orientation=self._sonar3D_rot,
-            #                         config_file_name="Simple_Example_Solid_State")
-            
-            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
-            #                         translation=self._sonar3D_trans,
-            #                         orientation=self._sonar3D_rot,
-            #                         config_file_name="OS2_REV6_128ch10hz512res")
-            
-            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
-            #                         translation=self._sonar3D_trans,
-            #                         orientation=self._sonar3D_rot,
-            #                         config_file_name="WATER_LINKED_3D_SONAR")
-
-            # Not working for now, the generated .usd file doesnt have the "OmniSensorGenericLidarCoreAPI" api added by default
-            # create_prim(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
-            #             prim_type='OmniLidar', 
-            #             usd_path='data/WATER_LINKED_3D_SONAR.usd')
-            
-            # create_prim(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
-            #             prim_type='OmniLidar', 
-            #             usd_path='data/sonar3D_WaterLinked.usd')
-            
-            
-            
-            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D_WaterLinked',
-            #                         translation=self._sonar3D_trans,
-            #                         orientation=self._sonar3D_rot,
-            #                         config_file_name=None)
-
-            
-            
-        
-        # TODO             
-        if self._add_objects:
-            pass
-            
-            
-
+                                    config_file_name="Simple_Example_Solid_State",
+                                    **sensor_attributes) # or Just Example_Solid_State
+                               
 
     def _setup_scenario(self):
         """
@@ -530,10 +482,6 @@ class UIBuilder():
     def _on_ctrl_mode_dropdown_clicked(self, model):
         self._ctrl_mode = model
         print(f'Ctrl mode: {model}. Reload the scene for changes to take effect.')
-
-    def _on_add_objects_checkbox_click_fn(self, model):
-        self._add_objects = model
-        print('Reload the scene for changes to take effect.')
    
     def _add_extra_ui(self):
         with self.sensor_reading_frame:

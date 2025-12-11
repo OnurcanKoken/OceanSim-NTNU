@@ -1,42 +1,82 @@
 import numpy as np
 
-sensor_attributes = {'omni:sensor:Core:validStartAzimuthDeg': 330,
-                    'omni:sensor:Core:validEndAzimuthDeg': 30}
+hor_resolution = 0.85   # deg
+vert_resolution = 1.60  # deg
+hor_fov = 90            # deg
+vert_fov = 40           # deg
+refresh_rate = 5        # Hz
+max_range = 15          # m
+min_range = 0.2         # m
 
-TRANSDUCER_FREQ = 1200000 # Hz
-HORIZONTAL_FOV = 90 # deg
-VERTICAL_FOV = 40 # deg
-MAX_RANGE = 15 # meters
-MIN_RANGE = 0.02 # meters
-RANGE_RESOLUTION = 0.0015 # meters
-BEAM_SEPARATION_HOR = 0.35 # deg
-BEAM_SEPERATION_VERT = 0.60 # deg
-ANGULAR_RESOLUTION_HOR = 0.85 # deg
-ANGULAR_RESOLUTION_VERT = 1.60 # deg
-UPDATE_RATE = 5 # Hz 
+num_rows = int(vert_fov / vert_resolution)
+num_columns = int(hor_fov / hor_resolution)
+total_emitters = int(num_rows * num_columns)
+print(f'num rows: {num_rows}, num cols: {num_columns}, total_emitters: {total_emitters}')
 
-def calculate_numberOfEmitters(step_hor_deg, range_hor_deg, step_vert_deg, range_vert_deg):
-    num_horizontal_elem = round(range_hor_deg/step_hor_deg)
-    num_vertical_elem = round(range_vert_deg/step_vert_deg)
-    return num_horizontal_elem, num_vertical_elem
+fire_step_Ns = round(1E9 / (total_emitters * refresh_rate))
+print(f'firestep is {fire_step_Ns} Ns, times total emitters is {fire_step_Ns*total_emitters*1E-9} s, which is {1/(fire_step_Ns*total_emitters*1E-9)} Hz')
 
-def calculate_azimuthDeg(horizontal_fov, num_emitters_horizontal, num_emitters_vertical):
-    half_horizontal_fov = horizontal_fov / 2
-    row_azimuth_deg = np.linspace(-half_horizontal_fov, half_horizontal_fov, num_emitters_horizontal)
+fireNs_list = [fire_step_Ns * i for i in range(total_emitters)]
+channelId_list = [i + 1 for i in range(total_emitters)]
+zeros_list = [0 for i in range(total_emitters)]
+rays_per_line_list = [num_columns for i in range(num_rows)]
 
-    azimuth_deg_matrix = np.zeros((num_emitters_vertical, num_emitters_horizontal))
-    for i in range(num_emitters_vertical):
-        azimuth_deg_matrix[i] = row_azimuth_deg
-    azimuthDeg_list = azimuth_deg_matrix.flatten().tolist()
-    print(len(azimuth_deg_matrix[0]))
-    return azimuthDeg_list
+row_azimuth_deg = np.linspace(-hor_fov/2, hor_fov/2, num_columns).tolist()
+assert len(row_azimuth_deg) == num_columns
+azimuth_deg_list = []
+for i in range(num_rows):
+    azimuth_deg_list.extend(row_azimuth_deg)
+assert azimuth_deg_list[:num_columns] == azimuth_deg_list[num_columns:2*num_columns]
+assert len(azimuth_deg_list) == total_emitters
+assert isinstance(azimuth_deg_list, list)
 
+column_elevation_deg = np.linspace(-vert_fov/2, vert_fov/2, num_rows).tolist()
+elevation_deg_list = []
+for elev_deg in column_elevation_deg:
+    elevation_deg_list.extend([elev_deg for i in range(num_columns)])
+assert elevation_deg_list[num_columns] == column_elevation_deg[1]
+assert len(elevation_deg_list) == total_emitters
+assert isinstance(elevation_deg_list, list)
 
-if __name__ == '__main__':
-    num_hor_emitters, num_vert_emitters = calculate_numberOfEmitters(step_hor_deg=ANGULAR_RESOLUTION_HOR,
-                                                range_hor_deg=HORIZONTAL_FOV,
-                                                step_vert_deg=ANGULAR_RESOLUTION_VERT,
-                                                range_vert_deg=VERTICAL_FOV)
-    total_emitters = num_hor_emitters * num_vert_emitters
+bank_list = []
+for i in range(num_rows, 0, -1):
+    bank_list.extend([i-1 for elem in range(num_columns)])
+assert len(bank_list) == total_emitters
 
-    azimuth_deg = calculate_azimuthDeg(HORIZONTAL_FOV, num_hor_emitters, num_vert_emitters)
+sensor_attributes = {
+                     "omni:sensor:Core:nearRangeM": min_range,
+                     "omni:sensor:Core:farRangeM": max_range,
+
+                     "omni:sensor:Core:scanRateBaseHz": refresh_rate,
+                     "omni:sensor:Core:reportRateBaseHz": refresh_rate,
+
+                     "omni:sensor:Core:numberOfEmitters": total_emitters,
+                     "omni:sensor:Core:numberOfChannels": total_emitters,
+                     
+                     "omni:sensor:Core:numLines": num_rows,
+                     "omni:sensor:Core:numRaysPerLine": rays_per_line_list, 
+                     
+                    #  "omni:sensor:Core:emitterState:s001:azimuthDeg": [-2, -1, 1, 2, 3,
+                    #                                                    -1.5, -0.5, 0.5, 1.5, 3,
+                    #                                                    -2.4, -1.4, 1.4, 2.4, 3],
+                    #  "omni:sensor:Core:emitterState:s001:elevationDeg": [
+                    #                                                     -8, -8, -8, -8, -8,
+                    #                                                     0, 0,  0,  0, 0,
+                    #                                                         8,  8,  8, 8, 8
+                    #                                                     ],
+
+                     "omni:sensor:Core:emitterState:s001:azimuthDeg": azimuth_deg_list,
+                     "omni:sensor:Core:emitterState:s001:elevationDeg": elevation_deg_list,
+
+                     "omni:sensor:Core:emitterState:s001:fireTimeNs": fireNs_list,
+                     "omni:sensor:Core:emitterState:s001:channelId": channelId_list,
+                    #  "omni:sensor:Core:emitterState:s001:bank": [2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+                     "omni:sensor:Core:emitterState:s001:bank": bank_list,
+                     "omni:sensor:Core:emitterState:s001:distanceCorrectionM": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:focalDistM": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:horOffsetM": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:focalSlope": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:rangeId": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:reportRateDiv": zeros_list,
+                     "omni:sensor:Core:emitterState:s001:vertOffsetM": zeros_list,
+                     }
