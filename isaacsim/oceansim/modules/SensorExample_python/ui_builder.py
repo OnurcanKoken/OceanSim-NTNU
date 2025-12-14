@@ -97,6 +97,7 @@ class UIBuilder():
         """
         self._DVL_event_sub = None
         self._baro_event_sub = None
+        self._sonar3D_event_sub = None
         for ui_elem in self.wrapped_ui_elements:
             ui_elem.cleanup()
         for frame in self.frames:
@@ -249,6 +250,7 @@ class UIBuilder():
         self._sonar3D = None
         self._sonar3D_trans = np.array([0, 0, 0.3])
         self._sonar3D_rot = np.array([1.0, 0, 0, 0]) # Identity quaternion
+        self._sonar3D_event_sub = None
         
         # Scenario
         self._scenario = MHL_Sensor_Example_Scenario()
@@ -358,19 +360,39 @@ class UIBuilder():
                                         water_surface_z=self._water_surface)
 
         if self._use_sonar3D:
-            from isaacsim.oceansim.sensors.Sonar3D import Sonar3D
+            from isaacsim.oceansim.sensors.Sonar3D import Sonar3D, Sonar3D_timestamp
             from isaacsim.oceansim.utils.sonar3D_attributes import sensor_attributes
 
+            sensor_attributes = {
+                "omni:sensor:Core:azimuthErrorStd": 0.0,
+                "omni:sensor:Core:elevationErrorStd": 0.0
+            }
+            self._sonar3D = Sonar3D_timestamp(prim_path=robot_prim_path + '/sonar3D',
+                                    translation=self._sonar3D_trans,
+                                    orientation=self._sonar3D_rot,
+                                    config_file_name="Example_Solid_State",
+                                    **sensor_attributes) # or Just Example_Solid_State      
+
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
+            #             translation=self._sonar3D_trans,
+            #             orientation=self._sonar3D_rot,
+            #             config_file_name="Example_Rotary")
+
+            # sensor_attributes = {
+            #     "omni:sensor:Core:azimuthErrorStd": 0.0,
+            #     "omni:sensor:Core:elevationErrorStd": 0.0
+            # }
             # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
             #                         translation=self._sonar3D_trans,
             #                         orientation=self._sonar3D_rot,
-            #                         config_file_name="Example_Solid_State") # or Just Example_Solid_State
+            #                         config_file_name="Example_Solid_State",
+            #                         **sensor_attributes) # or Just Example_Solid_State
             
-            self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D_none',
-                                    translation=self._sonar3D_trans,
-                                    orientation=self._sonar3D_rot,
-                                    config_file_name="Simple_Example_Solid_State",
-                                    **sensor_attributes) # or Just Example_Solid_State
+            # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D_none',
+            #                         translation=self._sonar3D_trans,
+            #                         orientation=self._sonar3D_rot,
+            #                         config_file_name="Simple_Example_Solid_State",
+            #                         **sensor_attributes) # or Just Example_Solid_State
                                
 
     def _setup_scenario(self):
@@ -632,5 +654,20 @@ class UIBuilder():
         if len(self._baro_data) > 50:
             self._baro_data.pop(0)
         self._baro_plot.set_data(*self._baro_data)
+
+    def toggle_sonar3D_step(self, val=None):
+        print('Sonar 3D DAQ: ', val)
+        if val:
+            if not self._sonar3D_event_sub:
+                self._sonar3D_event_sub = (
+                    omni.kit.app.get_app().get_update_event_stream().create_subscription_to_pop(self._on_sonar3D_step)
+                )
+            else:
+                self._sonar3D_event_sub = None
+        else:
+            self._sonar3D_event_sub = None
+
+    def _on_sonar3D_step(self, e: carb.events.IEvent):
+        print(self._sonar3D.get_current_frame())
 
         

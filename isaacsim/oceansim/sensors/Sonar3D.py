@@ -1,5 +1,7 @@
 from isaacsim.sensors.rtx import LidarRtx
 import omni.replicator.core as rep
+import carb
+import omni.kit.app
 
 class Sonar3D(LidarRtx):
     def __init__(self, prim_path, translation, orientation, config_file_name,**sensor_atributes):
@@ -11,6 +13,7 @@ class Sonar3D(LidarRtx):
                          **sensor_atributes)
     
     def initialize(self):
+        
         # The point cloud you see in IsaacSim
         self.attach_writer('RtxLidarDebugDrawPointCloudBuffer')
         # This annotator is for the data, but we dont use it but publish it directly with the writer
@@ -28,6 +31,45 @@ class Sonar3D(LidarRtx):
 
     def close(self):
         # These writers and annotators used memory and you need to release them
-        self.writer.detach()
-        self.detach_all_annotators()
+        self.writer.detach() 
+        self.detach_all_annotators() 
+        self.detach_all_writers()
+
+
+class Sonar3D_timestamp(LidarRtx):
+    def __init__(self, prim_path, translation, orientation, config_file_name,**sensor_atributes):
+        super().__init__(prim_path=prim_path,
+                         name="Sonar3D",
+                         translation=translation,
+                         orientation=orientation,
+                         config_file_name=config_file_name,
+                         **sensor_atributes)
+        self.pointcloud_annotator = None
+    
+    def initialize(self):
+        # The point cloud you see in IsaacSim
+        self.attach_writer('RtxLidarDebugDrawPointCloudBuffer')
+        
+        self.pointcloud_annotator = self.attach_annotator(
+            "IsaacCreateRTXLidarScanBuffer", 
+            outputTimestamp=True,
+        )
+        
+
+    def get_annotated_data(self):
+        if self.pointcloud_annotator is None:
+            return None
+
+        frame = self.get_current_frame()
+        node_path = self.pointcloud_annotator.get_node_path()
+
+        if node_path not in frame:
+            return None
+
+        return frame[node_path]
+
+    def close(self):
+        # These writers and annotators used memory and you need to release them
+        self.writer.detach() 
+        self.detach_all_annotators() 
         self.detach_all_writers()

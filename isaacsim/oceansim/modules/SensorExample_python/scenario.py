@@ -158,7 +158,11 @@ class MHL_Sensor_Example_Scenario():
         if self._sonar is not None:
             self._sonar.close()
         if self._cam is not None:
-            self._cam.close()        
+            self._cam.close()  
+        # Clear cache of 3D sonar too
+        if self._sonar3D is not None:
+            self._sonar3D.close()   
+
 
         # clear the keyboard subscription
         if self._ctrl_mode=="Manual control":
@@ -177,11 +181,6 @@ class MHL_Sensor_Example_Scenario():
         self._running_scenario = False
         self._time = 0.0
 
-        # Clear cache of 3D sonar too
-        if self._sonar3D is not None:
-            self._sonar3D.close()
-
-
     def update_scenario(self, step: float):
         
         if not self._running_scenario:
@@ -197,6 +196,10 @@ class MHL_Sensor_Example_Scenario():
             self._DVL_reading = self._DVL.get_linear_vel()
         if self._baro is not None:
             self._baro_reading = self._baro.get_pressure()
+        
+        # Added to see if this function is called when the simulation runs
+        if self._sonar3D is not None:
+            self._sonar3D._on_sonar3D_update()
 
         if self._ctrl_mode=="Manual control":
             force_cmd = Gf.Vec3f(*self._force_cmd._base_command)
