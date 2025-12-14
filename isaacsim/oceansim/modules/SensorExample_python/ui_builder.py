@@ -251,6 +251,7 @@ class UIBuilder():
         self._sonar3D_trans = np.array([0, 0, 0.3])
         self._sonar3D_rot = np.array([1.0, 0, 0, 0]) # Identity quaternion
         self._sonar3D_event_sub = None
+        self._sonar3D_debug = 0
         
         # Scenario
         self._scenario = MHL_Sensor_Example_Scenario()
@@ -371,7 +372,9 @@ class UIBuilder():
                                     translation=self._sonar3D_trans,
                                     orientation=self._sonar3D_rot,
                                     config_file_name="Example_Solid_State",
-                                    **sensor_attributes) # or Just Example_Solid_State      
+                                    **sensor_attributes) # or Just Example_Solid_State 
+
+            self.toggle_sonar3D_step(self._use_sonar3D) 
 
             # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
             #             translation=self._sonar3D_trans,
@@ -668,6 +671,8 @@ class UIBuilder():
             self._sonar3D_event_sub = None
 
     def _on_sonar3D_step(self, e: carb.events.IEvent):
+        self._sonar3D_debug += 1
+        print(f"debug: {self._sonar3D_debug}")
         print(self._sonar3D.get_current_frame())
 
         
