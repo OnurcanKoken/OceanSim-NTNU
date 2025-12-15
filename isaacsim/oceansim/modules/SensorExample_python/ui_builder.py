@@ -361,20 +361,21 @@ class UIBuilder():
                                         water_surface_z=self._water_surface)
 
         if self._use_sonar3D:
-            from isaacsim.oceansim.sensors.Sonar3D import Sonar3D, Sonar3D_timestamp
+            from isaacsim.oceansim.sensors.Sonar3D import Sonar3D
             from isaacsim.oceansim.utils.sonar3D_attributes import sensor_attributes
 
             sensor_attributes = {
                 "omni:sensor:Core:azimuthErrorStd": 0.0,
-                "omni:sensor:Core:elevationErrorStd": 0.0
+                "omni:sensor:Core:elevationErrorStd": 0.0,
+                "omni:sensor:Core:auxOutputType": "BASIC"
             }
-            self._sonar3D = Sonar3D_timestamp(prim_path=robot_prim_path + '/sonar3D',
+            self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
                                     translation=self._sonar3D_trans,
                                     orientation=self._sonar3D_rot,
-                                    config_file_name="Example_Solid_State",
+                                    config_file_name="Simple_Example_Solid_State",
                                     **sensor_attributes) # or Just Example_Solid_State 
 
-            self.toggle_sonar3D_step(self._use_sonar3D) 
+            self.toggle_sonar3D_step() 
 
             # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
             #             translation=self._sonar3D_trans,
@@ -658,21 +659,45 @@ class UIBuilder():
             self._baro_data.pop(0)
         self._baro_plot.set_data(*self._baro_data)
 
-    def toggle_sonar3D_step(self, val=None):
-        print('Sonar 3D DAQ: ', val)
-        if val:
-            if not self._sonar3D_event_sub:
-                self._sonar3D_event_sub = (
-                    omni.kit.app.get_app().get_update_event_stream().create_subscription_to_pop(self._on_sonar3D_step)
-                )
-            else:
-                self._sonar3D_event_sub = None
+    def toggle_sonar3D_step(self):
+        if not self._sonar3D_event_sub:
+            self._sonar3D_event_sub = (
+                omni.kit.app.get_app().get_update_event_stream().create_subscription_to_pop(self._on_sonar3D_step)
+            )
         else:
             self._sonar3D_event_sub = None
 
     def _on_sonar3D_step(self, e: carb.events.IEvent):
-        self._sonar3D_debug += 1
-        print(f"debug: {self._sonar3D_debug}")
-        print(self._sonar3D.get_current_frame())
-
+        # self._sonar3D_debug += 1
+        # print(f"debug: {self._sonar3D_debug}")
+        current_frame = self._sonar3D.get_current_frame()
+        annotator = 'IsaacCreateRTXLidarScanBuffer'
         
+        if annotator in current_frame:
+            data = current_frame[annotator]['data']
+            timestamp = current_frame[annotator]['timestamp']
+            render_time = current_frame['rendering_time']
+            emitterId = current_frame[annotator]['emitterId']
+            index = current_frame[annotator]['index']
+            azimuth = current_frame[annotator]['azimuth']
+            # Buffer annotator so not always full
+            # if data and timestamp:
+            if self._sonar3D_debug != render_time:
+                # print(render_time)
+                print(data)
+                print(len(data))
+                print(len(emitterId))
+                print(timestamp)
+                print(len(timestamp))
+                print(f'index: {index}')
+                print(f'azimuth: {azimuth}')
+                
+                # print(current_frame[annotator].keys()) # dict_keys(['azimuth', 'beamId', 'data', 'distance', 'elevation', 'emitterId', 'index', 'intensity', 'materialId', 'normal', 'objectId', 'timestamp', 'velocity', 'info'])
+                
+                # print(current_frame.keys()) # dict_keys(['rendering_time', 'rendering_frame', 'IsaacCreateRTXLidarScanBuffer'])
+                
+            self._sonar3D_debug = render_time
+                
+        
+
+    

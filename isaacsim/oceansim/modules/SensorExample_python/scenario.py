@@ -54,11 +54,8 @@ class MHL_Sensor_Example_Scenario():
             self._baro_reading = 101325.0 # atmospheric pressure (Pa)
         if self._sonar3D is not None:
             self._sonar3D.initialize()
-            # Attach annotator to collect Lidar data with timestamp
-            self._sonar3D.attach_annotator("IsaacCreateRTXLidarScanBuffer", outputTimestamp=True)
-            # Easy way to visualize point cloud
-            self._sonar3D.enable_visualization()
-        
+            self._sonar3D.custom_init()
+                    
         
         # Apply the physx force schema if manual control
         if ctrl_mode == "Manual control":
