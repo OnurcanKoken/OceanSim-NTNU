@@ -30,24 +30,24 @@ class Sonar3D(LidarRtx):
         self.enable_visualization()
 
         # Attach annotator to collect Lidar data with timestamp
-        self.attach_annotator("IsaacCreateRTXLidarScanBuffer", 
-                              outputTimestamp=True,
-                              outputEmitterId=True,
-                              outputAzimuth=True)
+        # self.attach_annotator("IsaacCreateRTXLidarScanBuffer", 
+        #                       outputTimestamp=True,
+        #                       outputEmitterId=True,
+        #                       outputAzimuth=True)
         
         # Create custom ros2 node for lidar data with timestamp
-        self._setup_ros2_publisher()
+        # self._setup_ros2_publisher()
 
 
         # FOR STANDARD ROS2 BRIDGE OF LIDAR DATA
-        # # The class automatically makes a render product 
-        # self._render_product_path = self.get_render_product_path()
-        # # This writer handles publishing the data to ROS2 topic
-        # self.writer = rep.writers.get("RtxLidar" + "ROS2PublishPointCloud")
-        # # Define the topic name that you see in the ros2 topics list and set frame ID to "map" so you can visualize it in Rviz2
-        # self.writer.initialize(topicName="sonar3D_point_cloud", frameId="map")
-        # # Attach the render product of the lidar to this writer
-        # self.writer.attach([self._render_product_path])
+        # The class automatically makes a render product 
+        self._render_product_path = self.get_render_product_path()
+        # This writer handles publishing the data to ROS2 topic
+        self.writer = rep.writers.get("RtxLidar" + "ROS2PublishPointCloud")
+        # Define the topic name that you see in the ros2 topics list and set frame ID to "map" so you can visualize it in Rviz2
+        self.writer.initialize(topicName="sonar3D_pointcloud_ros2Bridge", frameId="base_scan")
+        # Attach the render product of the lidar to this writer
+        self.writer.attach([self._render_product_path])
 
     def _setup_ros2_publisher(self):
         try:

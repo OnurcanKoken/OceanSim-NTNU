@@ -367,15 +367,16 @@ class UIBuilder():
             sensor_attributes = {
                 "omni:sensor:Core:azimuthErrorStd": 0.0,
                 "omni:sensor:Core:elevationErrorStd": 0.0,
-                "omni:sensor:Core:auxOutputType": "BASIC"
+                "omni:sensor:Core:auxOutputType": "BASIC",
+                "omni:sensor:Core:farRangeM": 100.0
             }
             self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
                                     translation=self._sonar3D_trans,
                                     orientation=self._sonar3D_rot,
-                                    config_file_name="Simple_Example_Solid_State",
+                                    config_file_name="Example_Solid_State",
                                     **sensor_attributes) # or Just Example_Solid_State 
 
-            self.toggle_sonar3D_step() 
+            # self.toggle_sonar3D_step() 
 
             # self._sonar3D = Sonar3D(prim_path=robot_prim_path + '/sonar3D',
             #             translation=self._sonar3D_trans,
