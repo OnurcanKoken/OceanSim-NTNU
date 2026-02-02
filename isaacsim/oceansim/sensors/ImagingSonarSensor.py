@@ -3,8 +3,18 @@ import omni.replicator.core as rep
 import omni.ui as ui
 import numpy as np
 from omni.replicator.core.scripts.functional import write_np
+import omni.timeline as timeline
 import warp as wp
 from isaacsim.oceansim.utils.ImagingSonar_kernels import *
+import rclpy
+from sensor_msgs.msg import Image
+
+from pxr import Gf
+import omni.kit.commands
+import omni.graph.core as og
+import carb
+from isaacsim.core.prims import SingleXFormPrim
+from isaacsim.core.utils.rotations import euler_angles_to_quat
 
 
 # Future TODO
@@ -155,7 +165,7 @@ class ImagingSonarSensor(Camera):
     # Can be set to False to gain performance if the data is 
     # expected to be used immediately within the writer. Defaults to True.
 
-    def sonar_initialize(self, output_dir : str = None, viewport: bool = True, include_unlabelled = False, if_array_copy: bool = True):
+    def sonar_initialize(self,output_dir : str = None, viewport: bool = True, include_unlabelled = False, if_array_copy: bool = True, enable_ros2_pub: bool = True, sonar_topic: str = '/oceansim/robot/imaging_sonar'):
         """Initialize sonar data processing pipeline and annotators.
     
         Args:
@@ -223,7 +233,36 @@ class ImagingSonarSensor(Camera):
         self.range_dependent_ray_noise.zero_()
         self.gau_noise.zero_()
 
+        # ROS2 configuration
+        self._enable_ros2_pub = enable_ros2_pub
+        self._sonar_topic = sonar_topic
+        self._setup_ros2_publisher()
+
+
+    def _setup_ros2_publisher(self):
+        '''
+        setup the publisher for the sonar data
+        '''
+        try:
+            if not self._enable_ros2_pub:
+                return
+
+            # Initialize ROS2 context if not already done
+            if not rclpy.ok():
+                rclpy.init()
+                print(f'[{self._name}] ROS2 context initialized')
+
+            # Create sonar data publisher node
+            node_name = f'oceansim_rob_sonar_pub_{self._name.lower()}'.replace(' ', '_')
+            self._ros2_sonar_node = rclpy.create_node(node_name)
+            self._sonar_pub = self._ros2_sonar_node.create_publisher(
+                Image, 
+                self._sonar_topic, 
+                10
+            )
         
+        except Exception as e:
+            print(f'[{self._name}] ROS2 sonar data publisher setup failed: {e}')        
 
     def scan(self):
 
@@ -250,6 +289,35 @@ class ImagingSonarSensor(Camera):
         else:
             return False
 
+    def _ros2_publish_sonar_image(self, sonar_data, frame_id="sonar_link"):
+        '''
+        Publish the sonar data as a ROS2 Image message
+        '''
+        try:
+            if not self._enable_ros2_pub:
+                return
+
+            # Convert sonar_data to numpy array on CPU
+            sonar_data_np = sonar_data.numpy()  # shape: (range_bins, azimuth_bins, 3)
+
+            # Create ROS2 Image message
+            msg = Image()
+            sim_time_seconds = timeline.get_timeline_interface().get_current_time()
+            msg.header.stamp = rclpy.time.Time(seconds=int(sim_time_seconds)).to_msg()
+            msg.header.frame_id = frame_id
+            msg.height = sonar_data_np.shape[0]
+            msg.width = sonar_data_np.shape[1]
+            msg.encoding = '32FC1'
+            msg.is_bigendian = False
+            msg.step = msg.width * 4  # 4 bytes per float32
+            msg.data = np.ascontiguousarray(sonar_data_np).tobytes()
+
+            # Publish the message
+            self._sonar_pub.publish(msg)
+            # print(f'[{self._name}] Published sonar data on topic: {self._sonar_topic}')
+
+        except Exception as e:
+            print(f'[{self._name}] Failed to publish sonar data: {e}')
 
     def make_sonar_data(self, 
                         binning_method: str = "sum", 
@@ -507,6 +575,11 @@ class ImagingSonarSensor(Camera):
             # self.backend.schedule(write_image, f'sonar_{self.id}.png', data = self.make_sonar_image())        
             
         self.id += 1
+
+        # ROS2 publishing
+        if self._enable_ros2_pub:
+            self._ros2_publish_sonar_image(self.binned_intensity)
+
     
 
     def make_sonar_image(self):
@@ -638,3 +711,119 @@ class ImagingSonarSensor(Camera):
         """
         for elem in self.wrapped_ui_elements:
             elem.destroy()
+
+    def add_debug_lines(self):
+        """Visualize Imaging Sonar FOV in the viewport using debug drawing.
+        
+        Creates 4 dummy LightBeamSensors at the corners of the FOV and 
+        an action graph that continuously draws the beam paths.
+        """
+        # Calculate orientations for the 4 corners of the frustum
+        # Assuming camera convention: -Z forward, +Y up, +X right
+        # Corners:
+        # 1. Top-Left: (+vert/2, +hori/2) (Rotation order matters, we'll try ZYX or similar)
+        # Using simple Euler angles for approximation
+        
+        h_half = self.hori_fov / 2.0
+        v_half = self.vert_fov / 2.0
+        
+        # Define the 4 corners (Y-axis rotation is Yaw/Horizontal, X-axis rotation is Pitch/Vertical)
+        # Note: Signs depend on axis definition. 
+        # Rot Y (+): turns Z towards X (Right if -Z is Fwd? No, Z to X is +Y rot. (0,0,1)->(1,0,0))
+        # If -Z is forward. Rot Y(+90) -> -X. So +Y rot is Left. -Y rot is Right.
+        # Rot X (+): turns Y towards Z. (0,1,0)->(0,0,1). 
+        # If -Z is forward. Rot X(+90) -> Old Y becomes Z(Back). Old -Z(Fwd) becomes Y(Up).
+        # So +X rot is Pitch Up.
+        
+        # Corners (Pitch, Yaw, Roll):
+        # TL: (+v, +h) -> Up, Left
+        # TR: (+v, -h) -> Up, Right
+        # BL: (-v, +h) -> Down, Left
+        # BR: (-v, -h) -> Down, Right
+        
+        orients_euler = np.array([
+            [v_half, h_half, 0.0],  # TL
+            [v_half, -h_half, 0.0], # TR
+            [-v_half, h_half, 0.0], # BL
+            [-v_half, -h_half, 0.0] # BR
+        ])
+        
+        self._debug_beam_paths = []
+        
+        for i in range(4):
+            path = self.prim_path + f"/debug_beam_{i}"
+            self._debug_beam_paths.append(path)
+            
+            # Create dummy beam sensor
+            result, _ = omni.kit.commands.execute(
+                "IsaacSensorCreateLightBeamSensor",
+                path=path,
+                min_range=self.min_range,
+                max_range=self.max_range,
+                forward_axis=Gf.Vec3d(0, 0, -1),
+                num_rays=1,
+            )
+            
+            if result:
+                # Set orientation
+                quat = euler_angles_to_quat(orients_euler[i], degrees=True)
+                SingleXFormPrim(prim_path=path).set_local_pose(orientation=quat)
+            else:
+                carb.log_error(f"[{self._name}] Failed to create debug beam {i}")
+
+        # Create Action Graph for visualization
+        try:
+            (action_graph, new_nodes, _, _) = og.Controller.edit(
+                {"graph_path": "/debugLinesSonar", "evaluator_name": "execution"},
+                {
+                    og.Controller.Keys.CREATE_NODES: [
+                        ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                        ("IsaacReadLightBeam0", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                        ("IsaacReadLightBeam1", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                        ("IsaacReadLightBeam2", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                        ("IsaacReadLightBeam3", "isaacsim.sensors.physx.IsaacReadLightBeam"),
+                        ("DebugDrawRayCast0", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                        ("DebugDrawRayCast1", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                        ("DebugDrawRayCast2", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                        ("DebugDrawRayCast3", "isaacsim.util.debug_draw.DebugDrawRayCast"),
+                    ],
+                    og.Controller.Keys.SET_VALUES: [
+                        ("IsaacReadLightBeam0.inputs:lightbeamPrim", self._debug_beam_paths[0]),
+                        ("IsaacReadLightBeam1.inputs:lightbeamPrim", self._debug_beam_paths[1]),
+                        ("IsaacReadLightBeam2.inputs:lightbeamPrim", self._debug_beam_paths[2]),
+                        ("IsaacReadLightBeam3.inputs:lightbeamPrim", self._debug_beam_paths[3]),
+                        # Set color to red for visibility
+                        ("DebugDrawRayCast0.inputs:color", [1, 0, 0, 1]),
+                        ("DebugDrawRayCast1.inputs:color", [1, 0, 0, 1]),
+                        ("DebugDrawRayCast2.inputs:color", [1, 0, 0, 1]),
+                        ("DebugDrawRayCast3.inputs:color", [1, 0, 0, 1]),
+                    ],
+                    og.Controller.Keys.CONNECT: [
+                        ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam0.inputs:execIn"),
+                        ("IsaacReadLightBeam0.outputs:execOut", "DebugDrawRayCast0.inputs:exec"),
+                        ("IsaacReadLightBeam0.outputs:beamOrigins", "DebugDrawRayCast0.inputs:beamOrigins"),
+                        ("IsaacReadLightBeam0.outputs:beamEndPoints", "DebugDrawRayCast0.inputs:beamEndPoints"),
+                        ("IsaacReadLightBeam0.outputs:numRays", "DebugDrawRayCast0.inputs:numRays"),
+
+                        ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam1.inputs:execIn"),
+                        ("IsaacReadLightBeam1.outputs:execOut", "DebugDrawRayCast1.inputs:exec"),
+                        ("IsaacReadLightBeam1.outputs:beamOrigins", "DebugDrawRayCast1.inputs:beamOrigins"),
+                        ("IsaacReadLightBeam1.outputs:beamEndPoints", "DebugDrawRayCast1.inputs:beamEndPoints"),
+                        ("IsaacReadLightBeam1.outputs:numRays", "DebugDrawRayCast1.inputs:numRays"),
+
+                        ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam2.inputs:execIn"),
+                        ("IsaacReadLightBeam2.outputs:execOut", "DebugDrawRayCast2.inputs:exec"),
+                        ("IsaacReadLightBeam2.outputs:beamOrigins", "DebugDrawRayCast2.inputs:beamOrigins"),
+                        ("IsaacReadLightBeam2.outputs:beamEndPoints", "DebugDrawRayCast2.inputs:beamEndPoints"),
+                        ("IsaacReadLightBeam2.outputs:numRays", "DebugDrawRayCast2.inputs:numRays"),
+
+                        ("OnPlaybackTick.outputs:tick", "IsaacReadLightBeam3.inputs:execIn"),
+                        ("IsaacReadLightBeam3.outputs:execOut", "DebugDrawRayCast3.inputs:exec"),
+                        ("IsaacReadLightBeam3.outputs:beamOrigins", "DebugDrawRayCast3.inputs:beamOrigins"),
+                        ("IsaacReadLightBeam3.outputs:beamEndPoints", "DebugDrawRayCast3.inputs:beamEndPoints"),
+                        ("IsaacReadLightBeam3.outputs:numRays", "DebugDrawRayCast3.inputs:numRays"),
+                    ],
+                },
+            )
+        except Exception as e:
+            carb.log_error(f"[{self._name}] Failed to create debug graph: {e}")
