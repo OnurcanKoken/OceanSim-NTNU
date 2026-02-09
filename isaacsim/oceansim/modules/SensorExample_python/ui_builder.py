@@ -464,7 +464,7 @@ class UIBuilder():
                                             angular_res=0.25,
                                             hori_res=4000
                                             )
-            #self._sonar.add_debug_lines()
+            # self._sonar.add_debug_lines()
             
         if self._use_camera:
             from isaacsim.oceansim.sensors.UW_Camera import UW_Camera

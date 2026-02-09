@@ -276,17 +276,52 @@ class ImagingSonarSensor(Camera):
             - First few frames may be empty due to CUDA initialization
             - Automatically skips frames with no detected objects
         """
-        # Due to the time to load annotator to cuda, the first few simulation tick gives no annotation in memory.
-        # This would also reult error when no mesh within the sonar fov
-        # NOTE: Isaac Sim annotator output has squeezed the first dimention after 5.0 update: (1,N,3) -> (N,3)   
-        if len(self.semanticSeg_annot.get_data()['info']['idToLabels']) !=0:
-            self.scan_data['pcl'] = self.pointcloud_annot.get_data(device=self._device)['data']  # shape :(N,3) <class 'warp.types.array'>
-            self.scan_data['normals'] = self.pointcloud_annot.get_data(device=self._device)['info']['pointNormals'] # shape :(N,4) <class 'warp.types.array'>
-            self.scan_data['semantics'] = self.pointcloud_annot.get_data(device=self._device)['info']['pointSemantic'] # shape: (N) <class 'warp.types.array'>
-            self.scan_data['viewTransform'] = self.cameraParams_annot.get_data()['cameraViewTransform'].reshape(4,4).T # 4 by 4 np.ndarray extrinsic matrix
-            self.scan_data['idToLabels'] = self.semanticSeg_annot.get_data()['info']['idToLabels'] # dict 
-            return True
-        else:
+        # # Due to the time to load annotator to cuda, the first few simulation tick gives no annotation in memory.
+        # # This would also reult error when no mesh within the sonar fov
+        # # NOTE: Isaac Sim annotator output has squeezed the first dimention after 5.0 update: (1,N,3) -> (N,3)   
+        # if len(self.semanticSeg_annot.get_data()['info']['idToLabels']) !=0:
+        #     self.scan_data['pcl'] = self.pointcloud_annot.get_data(device=self._device)['data']  # shape :(N,3) <class 'warp.types.array'>
+        #     self.scan_data['normals'] = self.pointcloud_annot.get_data(device=self._device)['info']['pointNormals'] # shape :(N,4) <class 'warp.types.array'>
+        #     self.scan_data['semantics'] = self.pointcloud_annot.get_data(device=self._device)['info']['pointSemantic'] # shape: (N) <class 'warp.types.array'>
+        #     self.scan_data['viewTransform'] = self.cameraParams_annot.get_data()['cameraViewTransform'].reshape(4,4).T # 4 by 4 np.ndarray extrinsic matrix
+        #     self.scan_data['idToLabels'] = self.semanticSeg_annot.get_data()['info']['idToLabels'] # dict 
+        #     return True
+        # else:
+        #     return False
+        try:
+            # 1. Check if the pipeline is actually ready to give us data.
+            # We access the semantic annotator first. If the pipeline is cold, 
+            # this (or the pointcloud access) will throw the KeyError.
+            seg_data = self.semanticSeg_annot.get_data()
+            
+            # If we got here, the annotator dictionary exists, but we should check if data is populated
+            if not seg_data or 'info' not in seg_data:
+                return False
+
+            # 2. Proceed with your existing logic
+            # NOTE: Isaac Sim annotator output has squeezed the first dimension after 5.0 update
+            if len(seg_data['info']['idToLabels']) != 0:
+                # Wrap the pointcloud access as well, just to be safe
+                pcl_data = self.pointcloud_annot.get_data(device=self._device)
+                
+                self.scan_data['pcl'] = pcl_data['data']
+                self.scan_data['normals'] = pcl_data['info']['pointNormals']
+                self.scan_data['semantics'] = pcl_data['info']['pointSemantic']
+                
+                self.scan_data['viewTransform'] = self.cameraParams_annot.get_data()['cameraViewTransform'].reshape(4,4).T
+                self.scan_data['idToLabels'] = seg_data['info']['idToLabels']
+                return True
+            else:
+                return False
+
+        except KeyError as e:
+            # This catches the specific '/Render/PostProcess/SDGPipeline/...' error
+            # It implies the Render Product hasn't completed a full cycle yet.
+            # We silently return False so the simulation can keep ticking until it's ready.
+            return False
+        except Exception as e:
+            # Catch other unforeseen errors to keep the sim alive
+            print(f"[{self._name}] Scan failed with unexpected error: {e}")
             return False
 
     def _ros2_publish_sonar_image(self, sonar_data, frame_id="sonar_link"):
