@@ -31,13 +31,13 @@ class ImagingSonarSensor(Camera):
                  translation = None, 
                  render_product_path = None,
                  physics_sim_view = None,
-                 min_range: float = 0.2, # m
-                 max_range: float = 3.0, # m
-                 range_res: float = 0.008, # deg
+                 min_range: float = 0.1, # m
+                 max_range: float = 40.0, # m
+                 range_res: float = 0.0025, # deg
                  hori_fov: float = 130.0, # deg
                  vert_fov: float = 20.0, # deg
-                 angular_res: float = 0.5, # deg
-                 hori_res: int = 3000 # isaac camera render product only accepts square pixel, 
+                 angular_res: float = 0.6, # deg
+                 hori_res: int = 4000 # isaac camera render product only accepts square pixel, 
                                       # for now vertical res is automatically set with ratio of hori_fov vs.vert_fov 
                  ):
         

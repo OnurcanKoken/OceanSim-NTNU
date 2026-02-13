@@ -460,11 +460,11 @@ class UIBuilder():
             self._sonar = ImagingSonarSensor(prim_path=robot_prim_path + '/sonar',
                                             translation=self._sonar_trans,
                                             orientation=euler_angles_to_quat(np.array([0.0, 45, 0.0]),  degrees=True),
-                                            range_res=0.005,
-                                            angular_res=0.25,
+                                            range_res=0.0025,
+                                            angular_res=0.6,
                                             hori_res=4000
                                             )
-            # self._sonar.add_debug_lines()
+            self._sonar.add_debug_lines()
             
         if self._use_camera:
             from isaacsim.oceansim.sensors.UW_Camera import UW_Camera
