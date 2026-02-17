@@ -233,6 +233,18 @@ class ImagingSonarSensor(Camera):
         self.range_dependent_ray_noise.zero_()
         self.gau_noise.zero_()
 
+        # Pre-allocate per-frame GPU buffers at maximum possible size to avoid
+        # per-frame alloc/free cycles. Each call to make_sonar_data() previously
+        # created wp.empty() arrays sized to num_points (which varies per frame).
+        # The async free of the previous frame's buffers raced with the next frame's
+        # memcpy_d2h (from numpy()), corrupting the CUDA context (error 700).
+        # By pre-allocating at max size and slicing, we eliminate all mid-run allocs.
+        self._max_points = self.hori_res * self.vert_res
+        self._intensity_buf = wp.zeros(shape=(self._max_points,), dtype=wp.float32)
+        self._pcl_local_buf = wp.zeros(shape=(self._max_points,), dtype=wp.vec3)
+        self._pcl_spher_buf = wp.zeros(shape=(self._max_points,), dtype=wp.vec3)
+        print(f'[{self._name}] Pre-allocated per-frame GPU buffers for max {self._max_points} points.')
+
         # ROS2 configuration
         self._enable_ros2_pub = enable_ros2_pub
         self._sonar_topic = sonar_topic
@@ -416,8 +428,11 @@ class ImagingSonarSensor(Camera):
         else:
             return
 
-        # Compute intensity for each ray query     
-        intensity = wp.empty(shape=(num_points,), dtype=wp.float32)
+        # Use pre-allocated buffers (sliced to num_points) instead of wp.empty().
+        # wp.empty() allocates a new GPU buffer every frame; the async free of the
+        # previous frame's buffer races with the ROS2 numpy() memcpy_d2h, causing
+        # CUDA error 700. Slicing a persistent buffer avoids all mid-run allocations.
+        intensity = self._intensity_buf[:num_points]
         wp.launch(kernel=compute_intensity,
                   dim=num_points,
                   inputs=[
@@ -434,8 +449,8 @@ class ImagingSonarSensor(Camera):
                 )
                 
         # Transform pointcloud from world cooridates to sonar local
-        pcl_local =wp.empty(shape=(num_points,), dtype=wp.vec3)
-        pcl_spher = wp.empty(shape=(num_points,), dtype=wp.vec3)
+        pcl_local = self._pcl_local_buf[:num_points]
+        pcl_spher = self._pcl_spher_buf[:num_points]
         wp.launch(kernel=world2local,
                   dim=num_points,
                   inputs=[
@@ -613,6 +628,11 @@ class ImagingSonarSensor(Camera):
 
         # ROS2 publishing
         if self._enable_ros2_pub:
+            # Synchronize the CUDA device before calling numpy() inside the publisher.
+            # numpy() triggers a synchronous memcpy_d2h. Without this sync, pending
+            # async Warp kernel launches / frees can still be in-flight on the GPU,
+            # and the concurrent memcpy corrupts the CUDA context (error 700).
+            wp.synchronize()
             self._ros2_publish_sonar_image(self.binned_intensity)
 
     
