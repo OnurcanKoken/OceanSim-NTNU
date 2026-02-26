@@ -39,10 +39,12 @@ except ImportError as e:
     print("[Scenario] ROS2 Control functionality will be disabled")
 
 class MHL_Sensor_Example_Scenario():
-    def __init__(self, publish_pose=True, publish_map=False, publish_cmds=True):
+    def __init__(self, publish_pose=False, publish_map=False, publish_cmds=True):
         self._rob = None
         self._sonar = None
-        self._cam = None
+        self._sonar = None
+        self._cams = [] # Changed to list of cameras
+        self._DVL = None
         self._DVL = None
         self._baro = None
         self._IMU = None
@@ -200,10 +202,12 @@ class MHL_Sensor_Example_Scenario():
             # sensor_name = "sonar_sensor"
             # sensor_path = self._data_collector.collect_data(name=sensor_name)
             self._sonar.sonar_initialize(include_unlabelled=True)
-        if self._cam is not None:
-            sensor_name = "camera_sensor"
-            sensor_path = self._data_collector.collect_data(name=sensor_name)
-            self._cam.initialize(writing_dir=sensor_path, ros2_pub_frequency=self._cam.get_frequency(), UW_yaml_path=uw_yaml_path)
+        for cam in self._cams:
+            if cam is not None:
+                sensor_name = f"camera_sensor_{cam._name}"
+                sensor_path = self._data_collector.collect_data(name=sensor_name)
+                topic_name = f"/oceansim/robot/{cam._name.lower()}/compressed"
+                cam.initialize(writing_dir=sensor_path, ros2_pub_frequency=cam.get_frequency(), UW_yaml_path=uw_yaml_path, uw_img_topic=topic_name)
         if self._DVL is not None:
             sensor_name = "DVL_sensor"
             sensor_path = self._data_collector.collect_data(name=sensor_name)
@@ -237,7 +241,7 @@ class MHL_Sensor_Example_Scenario():
                 'physics_step':        0    
             }
 
-    def setup_scenario(self, rob, sonar, cam, DVL, baro, IMU, ctrl_mode,data_collection_mode, data_collection_path="", uw_yaml_path=None):
+    def setup_scenario(self, rob, sonar, cams, DVL, baro, IMU, ctrl_mode,data_collection_mode, data_collection_path="", uw_yaml_path=None):
         if not rclpy.ok():
             print("[Scenario] ROS2 Context was dead. Resurrecting before sensor init...")
             rclpy.init()
@@ -246,7 +250,10 @@ class MHL_Sensor_Example_Scenario():
         self.data_collection_path = data_collection_path
         self._rob = rob
         self._sonar = sonar
-        self._cam = cam
+        self._rob = rob
+        self._sonar = sonar
+        self._cams = cams if isinstance(cams, list) else [cams] if cams is not None else []
+        self._DVL = DVL
         self._DVL = DVL
         self._baro = baro
         self._IMU = IMU
@@ -265,8 +272,10 @@ class MHL_Sensor_Example_Scenario():
         else:
             if self._sonar is not None:
                 self._sonar.sonar_initialize(include_unlabelled=True)
-            if self._cam is not None:
-                self._cam.initialize(ros2_pub_frequency=self._cam.get_frequency(), UW_yaml_path=uw_yaml_path)#, writing_dir="/home/osim-mir/OceanSimAssets/GroundTruth")
+            for cam in self._cams:
+                if cam is not None:
+                    topic_name = f"/oceansim/robot/{cam._name.lower()}/compressed"
+                    cam.initialize(ros2_pub_frequency=cam.get_frequency(), UW_yaml_path=uw_yaml_path, uw_img_topic=topic_name)#, writing_dir="/home/osim-mir/OceanSimAssets/GroundTruth")
             if self._DVL is not None:
                 self._DVL_reading = [0.0, 0.0, 0.0]
             if self._baro is not None:
@@ -513,8 +522,9 @@ class MHL_Sensor_Example_Scenario():
         # close() will detach annotator from render product and clear the cache.
         if self._sonar is not None:
             self._sonar.close()
-        if self._cam is not None:
-            self._cam.close()
+        for cam in self._cams:
+            if cam is not None:
+                cam.close()
         if self._IMU is not None:
             self._IMU.close()
         
@@ -548,7 +558,10 @@ class MHL_Sensor_Example_Scenario():
 
         self._rob = None
         self._sonar = None
-        self._cam = None
+        self._rob = None
+        self._sonar = None
+        self._cams = []
+        self._DVL = None
         self._DVL = None
         self._baro = None
         self._IMU = None
@@ -701,13 +714,20 @@ class MHL_Sensor_Example_Scenario():
                 )
 
         # CAMERA UPDATE (Slow - 20 Hz)
-        if not hasattr(self, '_last_cam_time'):
-            self._last_cam_time = 0.0
+        # Assuming all cameras run at similar frequency or we track them individually?
+        # Let's track individually if needed, but for now simple check
         
-        if self._cam is not None:
-            if (self._time - self._last_cam_time) >= (1.0 / self._cam.get_frequency()):
-                self._cam.render(sim_time=self._time)
-                self._last_cam_time = self._time
+        for i, cam in enumerate(self._cams):
+            if cam is not None:
+                # We need individual trackers if frequencies differ
+                # Quick hack: use attribute on camera object or dictionary
+                if not hasattr(self, '_last_cam_times'):
+                   self._last_cam_times = {}
+                
+                last_time = self._last_cam_times.get(cam._name, 0.0)
+                if (self._time - last_time) >= (1.0 / cam.get_frequency()):
+                    cam.render(sim_time=self._time)
+                    self._last_cam_times[cam._name] = self._time
         
         if self._sonar is not None:
             self._sonar.make_sonar_data()

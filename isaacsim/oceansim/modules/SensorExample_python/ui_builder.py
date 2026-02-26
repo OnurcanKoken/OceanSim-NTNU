@@ -162,6 +162,15 @@ class UIBuilder():
                 self._use_camera = False
                 self.wrapped_ui_elements.append(camera_check_box)
 
+                stereo_cam_check_box = CheckBox(
+                    "Stereo Downward Cameras",
+                    default_value=False,
+                    tooltip=" Click this checkbox to activate stereo downward cameras (0.12m baseline)",
+                    on_click_fn=self._on_stereo_camera_checkbox_click_fn,
+                )
+                self._use_stereo_camera = False
+                self.wrapped_ui_elements.append(stereo_cam_check_box)
+
                 self._uw_yaml_path_field = str_builder(
                     label='Path to UW Config',
                     default_val="",
@@ -302,7 +311,9 @@ class UIBuilder():
         # Sensor
         self._sonar = None
         self._sonar_trans = np.array([0.3,0.0, 0.3])
-        self._cam = None
+        self._sonar = None
+        self._sonar_trans = np.array([0.3,0.0, 0.3])
+        self._cams = []
         self._cam_trans = np.array([0.3,0.0, 0.1])
         self._cam_focal_length = 21
         self._DVL = None
@@ -466,35 +477,67 @@ class UIBuilder():
                                             )
             # self._sonar.add_debug_lines()
             
-        if self._use_camera:
-            from isaacsim.oceansim.sensors.UW_Camera import UW_Camera
-
-            self._cam = UW_Camera(prim_path=robot_prim_path + '/UW_camera',
-                                    resolution=[1920,1080],
-                                    translation=self._cam_trans)
-            self._cam.set_focal_length(0.1 * self._cam_focal_length)
-            self._cam.set_clipping_range(0.1, 100)
-            from omni.isaac.core import World
-
-            # 1. Get the singleton instance of the World
+        from isaacsim.oceansim.sensors.UW_Camera import UW_Camera
+        from omni.isaac.core import World
+        
+        # Helper to setup camera
+        def setup_camera(prim_path, name, translation, orientation=None, resolution=[1920, 1080]):
+            cam = UW_Camera(prim_path=prim_path,
+                            name=name,
+                            resolution=resolution,
+                            translation=translation,
+                            orientation=orientation)
+            cam.set_focal_length(0.1 * self._cam_focal_length)
+            cam.set_clipping_range(0.1, 100)
+            
             world = World.instance()
-
             if world is None:
-                carb.log_warn("World instance is None. Camera frequency default to 60Hz.")
-                self._cam.set_frequency(60)
+                carb.log_warn(f"World instance is None. Camera {name} frequency default to 60Hz.")
+                cam.set_frequency(60)
             else:
-                # 2. Get the rendering time step (dt)
-                # Note: This returns the 'rendering_dt' you set (e.g., 0.01)
                 render_dt = world.get_rendering_dt()
-
-                # 3. Calculate the frequency (Hz)
                 if render_dt is not None and render_dt > 0:
                     render_freq = 1.0 / render_dt
-                    print(f"Rendering Frequency: {render_freq} Hz")
-                    self._cam.set_frequency(int(render_freq))
+                    cam.set_frequency(int(render_freq))
                 else:
-                    print("World is not initialized or rendering_dt is zero.")
-                    self._cam.set_frequency(60) # Default fallback
+                    cam.set_frequency(60)
+            return cam
+
+        if self._use_camera:
+            self._cams.append(setup_camera(
+                prim_path=robot_prim_path + '/UW_camera',
+                name="UW_Camera",
+                translation=self._cam_trans
+            ))
+            
+        if self._use_stereo_camera:
+            # 0.12m baseline, centered at Y=0 -> +/- 0.06
+            # Downward looking: Rotation around Y axis by -90 degrees? 
+            # Standard camera looks at -Z. 
+            # Robot frame: X forward, Z up.
+            # We want camera looking at -Z (down). 
+            # If we rotate 90 deg around Y? 
+            # Original: X right, Y up, Z forward (OpenGL)?? No, USD is -Z forward, Y up, X right.
+            # Wait, let's use euler_angles_to_quat to be safe and consistent.
+            # Downward usually means pitch -90.
+            
+            # Left Camera (Y = +0.06)
+            self._cams.append(setup_camera(
+                prim_path=robot_prim_path + '/down_cam_left',
+                name="DownCamLeft",
+                translation=np.array([-0.2, 0.06, -0.01]), # Adjust X/Z as needed
+                orientation=euler_angles_to_quat(np.array([0.0, 90.0, 0.0]), degrees=True),
+                resolution=[1280, 720] # Lower resolution for stereo? Or same? Keeping high for now or default
+            ))
+            
+            # Right Camera (Y = -0.06)
+            self._cams.append(setup_camera(
+                prim_path=robot_prim_path + '/down_cam_right',
+                name="DownCamRight",
+                translation=np.array([-0.2, -0.06, -0.01]),
+                orientation=euler_angles_to_quat(np.array([0.0, 90.0, 0.0]), degrees=True),
+                resolution=[1280, 720]
+            ))
             
         if self._use_DVL:
             from isaacsim.oceansim.sensors.DVLsensor import DVLsensor
@@ -502,7 +545,7 @@ class UIBuilder():
             self._DVL = DVLsensor(max_range=10)
             self._DVL.attachDVL(rigid_body_path=robot_prim_path,
                                 translation=self._DVL_trans)
-            self._DVL.add_debug_lines()
+            # self._DVL.add_debug_lines()
             
         if self._use_baro:
             from isaacsim.oceansim.sensors.BarometerSensor import BarometerSensor
@@ -539,7 +582,7 @@ class UIBuilder():
         self._scenario.setup_scenario(
             self._rob, 
             self._sonar, 
-            self._cam, 
+            self._cams, 
             self._DVL, 
             self._baro, 
             self._IMU, 
@@ -625,6 +668,10 @@ class UIBuilder():
 
     def _on_camera_checkbox_click_fn(self, model):
         self._use_camera = model
+        print('Reload the scene for changes to take effect.')
+
+    def _on_stereo_camera_checkbox_click_fn(self, model):
+        self._use_stereo_camera = model
         print('Reload the scene for changes to take effect.')
 
     def _on_DVL_checkbox_click_fn(self, model):

@@ -17,6 +17,7 @@ from isaacsim.oceansim.utils.MultivariateNormal import MultivariateNormal
 # ROS2 import
 import rclpy
 from geometry_msgs.msg import TwistStamped, Vector3
+from std_msgs.msg import Float64MultiArray
 try:
     from geometry_msgs.msg import TwistWithCovarianceStamped
     _HAS_COVARIANCE = True
@@ -100,6 +101,7 @@ class DVLsensor:
         # ROS2
         self._ros2_node = None
         self._ros2_pub = None
+        self._ros2_pub_transducers = None
         self._enable_ros2 = False
 
         # Logging
@@ -395,8 +397,15 @@ class DVLsensor:
                 rclpy.init()
             self._ros2_node = rclpy.create_node(node_name)
             self._ros2_pub = self._ros2_node.create_publisher(TwistStamped, topic_name, 10)
+            
+            # Create publisher for raw transducer data (ranges and validities)
+            # Assuming topic_name is something like "dvl/velocity", we want "dvl/transducers"
+            # If it's just "dvl", we want "dvl/transducers"
+            base_topic = topic_name.split('/')[0] if '/' in topic_name else topic_name
+            self._ros2_pub_transducers = self._ros2_node.create_publisher(Float64MultiArray, f"{base_topic}/transducers", 10)
+            
             self._enable_ros2 = True
-            print(f"[{self._name}] Initialized ROS2 publisher on topic: {topic_name}")
+            print(f"[{self._name}] Initialized ROS2 publisher on topic: {topic_name} and {base_topic}/transducers")
         except Exception as e:
             carb.log_error(f"[{self._name}] Failed to init ROS2: {e}")
 
@@ -415,6 +424,23 @@ class DVLsensor:
             msg.twist.linear = Vector3(x=float(velocity[0]), y=float(velocity[1]), z=float(velocity[2]))
             
             self._ros2_pub.publish(msg)
+            
+            # Publish transducers data
+            if self._ros2_pub_transducers is not None:
+                depths = self.get_depth()
+                beam_hits = self.get_beam_hit()
+                
+                # Format: [d0, d1, d2, d3, v0, v1, v2, v3]
+                data = []
+                for d in depths:
+                    data.append(float(d) if not np.isnan(d) else -1.0)
+                for h in beam_hits:
+                    data.append(1.0 if h else 0.0)
+                    
+                t_msg = Float64MultiArray()
+                t_msg.data = data
+                self._ros2_pub_transducers.publish(t_msg)
+
             rclpy.spin_once(self._ros2_node, timeout_sec=0)
             
         except Exception as e:
