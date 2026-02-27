@@ -7,7 +7,9 @@ import omni.timeline as timeline
 import warp as wp
 from isaacsim.oceansim.utils.ImagingSonar_kernels import *
 import rclpy
+import rclpy.time
 from sensor_msgs.msg import Image
+from blueye_interfaces.msg import FloatStamped
 
 from pxr import Gf
 import omni.kit.commands
@@ -15,7 +17,6 @@ import omni.graph.core as og
 import carb
 from isaacsim.core.prims import SingleXFormPrim
 from isaacsim.core.utils.rotations import euler_angles_to_quat
-
 
 # Future TODO
 # In future release, wrap this class around RTX lidar
@@ -280,16 +281,62 @@ class ImagingSonarSensor(Camera):
                 print(f'[{self._name}] ROS2 context initialized')
 
             # Create sonar data publisher node
-            node_name = f'oceansim_rob_sonar_pub_{self._name.lower()}'.replace(' ', '_')
+            import time
+            unique_id = int(time.time()) % 1000
+            node_name = f'oceansim_rob_sonar_pub_{self._name.lower()}_{unique_id}'.replace(' ', '_')
             self._ros2_sonar_node = rclpy.create_node(node_name)
             self._sonar_pub = self._ros2_sonar_node.create_publisher(
                 Image, 
                 self._sonar_topic, 
                 10
             )
+
+            self._pitch_pub = self._ros2_sonar_node.create_publisher(
+                FloatStamped,
+                "/oceansim/robot/sonar_pitch", 
+                10
+            )
         
         except Exception as e:
-            print(f'[{self._name}] ROS2 sonar data publisher setup failed: {e}')        
+            print(f'[{self._name}] ROS2 sonar data publisher setup failed: {e}')
+
+    def publish_pitch(self):
+        """Calculates and publishes the pitch of the sonar relative to its parent (/World/rob)."""
+        if not hasattr(self, '_pitch_pub') or self._pitch_pub is None:
+            return
+
+        try:
+            # Get the local transform matrix relative to the parent prim
+            local_transform = self.get_local_pose() # Returns (translation, orientation)
+            
+            # Extract the orientation (quaternion)
+            # local_transform[1] is the quaternion in (w, x, y, z) format
+            quat = Gf.Quatd(float(local_transform[1][0]), 
+                            float(local_transform[1][1]), 
+                            float(local_transform[1][2]), 
+                            float(local_transform[1][3]))
+            
+            # Convert Quaternion to Rotation Matrix and Decompose to Euler angles
+            rotation = Gf.Rotation(quat)
+            euler_angles = rotation.Decompose(Gf.Vec3d(1, 0, 0), Gf.Vec3d(0, 1, 0), Gf.Vec3d(0, 0, 1))
+            
+            # Create and populate the ROS2 message
+            msg = FloatStamped()
+            
+            sim_time = timeline.get_timeline_interface().get_current_time()
+            msg.header.stamp.sec = int(sim_time)
+            msg.header.stamp.nanosec = int((sim_time - int(sim_time)) * 1e9)
+            msg.header.frame_id = "sonar_link"            
+            msg.data = float(euler_angles[1])
+            
+            self._pitch_pub.publish(msg)
+            
+            # Process discovery/event queue
+            if rclpy.ok():
+                rclpy.spin_once(self._ros2_sonar_node, timeout_sec=0)
+
+        except Exception as e:
+            print(f"[{self._name}] Local pitch publication error: {e}")
 
     def scan(self):
 
@@ -658,6 +705,7 @@ class ImagingSonarSensor(Camera):
             # and the concurrent memcpy corrupts the CUDA context (error 700).
             wp.synchronize()
             self._ros2_publish_sonar_image(self.binned_intensity)
+            self.publish_pitch()
 
     
 
@@ -779,6 +827,10 @@ class ImagingSonarSensor(Camera):
 
         if self._viewport:
             self.ui_destroy()
+
+        if hasattr(self, '_ros2_sonar_node') and self._ros2_sonar_node is not None:
+            self._ros2_sonar_node.destroy_node()
+            self._ros2_sonar_node = None
 
 
     def ui_destroy(self):
