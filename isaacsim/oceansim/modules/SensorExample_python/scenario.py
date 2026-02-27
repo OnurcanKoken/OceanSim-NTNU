@@ -28,6 +28,8 @@ import PIL.ImageDraw
 import time
 import csv
 
+from rosgraph_msgs.msg import Clock
+
 # ROS Control import
 try:
     from isaacsim.oceansim.utils.ros2_control import ROS2ControlReceiver
@@ -39,7 +41,7 @@ except ImportError as e:
     print("[Scenario] ROS2 Control functionality will be disabled")
 
 class MHL_Sensor_Example_Scenario():
-    def __init__(self, publish_pose=True, publish_map=False, publish_cmds=True):
+    def __init__(self, publish_clock=True, publish_pose=True, publish_map=False, publish_cmds=True):
         self._rob = None
         self._sonar = None
         self._cam = None
@@ -64,6 +66,7 @@ class MHL_Sensor_Example_Scenario():
 
         self._rob_pose_topic = "/oceansim/robot/pose"
         self._rob_cmd_topic = "/oceansim/robot/cmd"
+        self._publish_clock = publish_clock
         self._publish_pose = publish_pose
         self._publish_map = publish_map
         self._publish_cmds = publish_cmds
@@ -88,6 +91,16 @@ class MHL_Sensor_Example_Scenario():
             self._rob_cmd_pub = self._ros2_rob_cmd_node.create_publisher(
                 Wrench,
                 self._rob_cmd_topic,
+                10
+            )
+
+        if self._publish_clock:
+            # Create clock publisher node
+            node_name = f'oceansim_clock_pub'
+            self._ros2_clock_node = rclpy.create_node(node_name)
+            self._clock_pub = self._ros2_clock_node.create_publisher(
+                Clock,
+                '/clock',
                 10
             )
 
@@ -817,13 +830,19 @@ class MHL_Sensor_Example_Scenario():
             else:
                 print('Waypoints finished')
                 self.generate_random_waypoints()
-
         
     def update_scenario(self, step: float):
         if not self._running_scenario:
             return
         
         self._time += step
+
+        if hasattr(self, '_clock_pub') and self._clock_pub is not None:
+            sim_time = self._timeline.get_current_time()
+            clock_msg = Clock()
+            clock_msg.clock.sec = int(sim_time)
+            clock_msg.clock.nanosec = int((sim_time - int(sim_time)) * 1e9)
+            self._clock_pub.publish(clock_msg)
 
         # Debug: Check actual update rate
         if not hasattr(self, '_last_update_time'):
