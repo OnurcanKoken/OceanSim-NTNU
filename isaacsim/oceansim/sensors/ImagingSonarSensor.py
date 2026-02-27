@@ -197,17 +197,21 @@ class ImagingSonarSensor(Camera):
             device=self._device
             )
         
+        # CameraParams returns a numpy-compatible dict — fetching on CPU avoids
+        # a round-trip through the GPU annotator cache for no benefit.
         self.cameraParams_annot = rep.AnnotatorRegistry.get_annotator(
             name="CameraParams",
             do_array_copy=if_array_copy,
-            device=self._device
+            device="cpu"
             )
         
+        # semantic_segmentation is only used for idToLabels (a Python dict).
+        # Fetching on CPU avoids needlessly copying a tiny dict through GPU memory.
         self.semanticSeg_annot = rep.AnnotatorRegistry.get_annotator(
             name='semantic_segmentation',
             init_params={"colorize": False},
             do_array_copy=if_array_copy,
-            device=self._device
+            device="cpu"
         )
 
         print(f'[{self._name}] Using {self._device}' )
@@ -244,6 +248,17 @@ class ImagingSonarSensor(Camera):
         self._pcl_local_buf = wp.zeros(shape=(self._max_points,), dtype=wp.vec3)
         self._pcl_spher_buf = wp.zeros(shape=(self._max_points,), dtype=wp.vec3)
         print(f'[{self._name}] Pre-allocated per-frame GPU buffers for max {self._max_points} points.')
+
+        # Pre-allocate maximum buffers used in normalizing step to avoid per-frame
+        # wp.zeros() GPU allocations inside the hot path.
+        self._maximum_all = wp.zeros(shape=(1,), dtype=wp.float32)
+        self._maximum_range = wp.zeros(shape=(self.r.shape[0],), dtype=wp.float32)
+
+        # Cache the last-seen idToLabels and its corresponding GPU array.
+        # Labels rarely change at runtime; recomputing and re-uploading every frame
+        # is pure waste. We only rebuild when the label dict actually changes.
+        self._cached_idToLabels = None
+        self._cached_indexToRefl = None
 
         # ROS2 configuration
         self._enable_ros2_pub = enable_ros2_pub
@@ -344,8 +359,10 @@ class ImagingSonarSensor(Camera):
             if not self._enable_ros2_pub:
                 return
 
-            # Convert sonar_data to numpy array on CPU
-            sonar_data_np = sonar_data.numpy()  # shape: (range_bins, azimuth_bins, 3)
+            # numpy() returns a C-contiguous CPU array (wp.synchronize() was called
+            # by the caller before this). np.ascontiguousarray() would make a redundant
+            # full copy of the entire sonar grid — skip it and call tobytes() directly.
+            sonar_data_np = sonar_data.numpy()  # shape: (range_bins, azimuth_bins)
 
             # Create ROS2 Image message
             msg = Image()
@@ -357,11 +374,10 @@ class ImagingSonarSensor(Camera):
             msg.encoding = '32FC1'
             msg.is_bigendian = False
             msg.step = msg.width * 4  # 4 bytes per float32
-            msg.data = np.ascontiguousarray(sonar_data_np).tobytes()
+            msg.data = sonar_data_np.tobytes()
 
             # Publish the message
             self._sonar_pub.publish(msg)
-            # print(f'[{self._name}] Published sonar data on topic: {self._sonar_topic}')
 
         except Exception as e:
             print(f'[{self._name}] Failed to publish sonar data: {e}')
@@ -416,11 +432,18 @@ class ImagingSonarSensor(Camera):
 
         if self.scan():
             num_points = self.scan_data['pcl'].shape[0]
-            # Load these small numpy arrays to cuda
-            indexToRefl = wp.array(make_indexToProp_array(idToLabels=self.scan_data['idToLabels'],
-                                                         query_property=query_prop),
-                                                         dtype=wp.float32)
-            viewTransform=wp.mat44(self.scan_data['viewTransform'])
+            # Rebuild the GPU reflectivity LUT only when the label set changes.
+            # In typical runs labels are static after warm-up, so this avoids
+            # a Python loop + wp.array GPU upload on every single frame.
+            current_labels = self.scan_data['idToLabels']
+            if current_labels != self._cached_idToLabels:
+                self._cached_idToLabels = current_labels
+                self._cached_indexToRefl = wp.array(
+                    make_indexToProp_array(idToLabels=current_labels, query_property=query_prop),
+                    dtype=wp.float32
+                )
+            indexToRefl = self._cached_indexToRefl
+            viewTransform = wp.mat44(self.scan_data['viewTransform'])
             # directly use warp array loaded on cuda
             pcl = self.scan_data['pcl']
             normals = self.scan_data['normals']
@@ -501,7 +524,9 @@ class ImagingSonarSensor(Camera):
                 )
         
         if binning_method == "sum":
-            self.binned_intensity = self.bin_sum
+            # Copy rather than reassign: reassigning self.binned_intensity to self.bin_sum
+            # would break the pre-allocated buffer reference and cause a GPU alloc next frame.
+            wp.copy(self.binned_intensity, self.bin_sum)
 
 
         self.range_dependent_ray_noise.zero_()
@@ -548,7 +573,7 @@ class ImagingSonarSensor(Camera):
         # Normalizing intensity at each bin either by global maximum or rangewise maximum
         # Compute global maximum
         if normalizing_method == "all":
-            maximum = wp.zeros(shape=(1,), dtype=wp.float32)
+            self._maximum_all.zero_()   # reset pre-allocated buffer instead of allocating
             wp.launch(
                 dim=self.bin_sum.shape,
                 kernel=all_max,
@@ -556,7 +581,7 @@ class ImagingSonarSensor(Camera):
                     self.binned_intensity,
                 ],
                 outputs=[
-                    maximum # wp.array of shape (1,), max value is stored at maximum[0]
+                    self._maximum_all
                 ]
             )
             
@@ -568,7 +593,7 @@ class ImagingSonarSensor(Camera):
                       self.r,
                       self.azi,
                       self.binned_intensity,
-                      maximum,
+                      self._maximum_all,
                       self.gau_noise,
                       self.range_dependent_ray_noise,
                       intensity_offset,
@@ -580,8 +605,7 @@ class ImagingSonarSensor(Camera):
                   )
             
         if normalizing_method == "range":
-            # Compute rangewise maximum
-            maximum = wp.zeros(shape=(self.r.shape[0],), dtype=wp.float32)
+            self._maximum_range.zero_()  # reset pre-allocated buffer instead of allocating
             wp.launch(
                 dim=self.bin_sum.shape,
                 kernel=range_max,
@@ -589,7 +613,7 @@ class ImagingSonarSensor(Camera):
                     self.binned_intensity,
                 ],
                 outputs=[
-                    maximum      # wp.array of shape (number of range bins, )
+                    self._maximum_range
                 ]
             )
             # Apply noise, normalize by range maximum, and convert (r, azi) to (x,y) for plotting
@@ -600,7 +624,7 @@ class ImagingSonarSensor(Camera):
                       self.r,
                       self.azi, 
                       self.binned_intensity,
-                      maximum,
+                      self._maximum_range,
                       self.gau_noise,
                       self.range_dependent_ray_noise,
                       intensity_offset,

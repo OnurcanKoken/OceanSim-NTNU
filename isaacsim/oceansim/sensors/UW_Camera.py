@@ -247,12 +247,33 @@ class UW_Camera(Camera):
     def render(self, sim_time=None):
         """Process and display a single frame with underwater effects."""
         try:
-            # 1. Get Data
+            # Synchronize before reading GPU annotator data to prevent
+            # illegal memory access (CUDA error 700) due to race conditions
+            import warp as wp
+            wp.synchronize()
+        except Exception as sync_err:
+            print(f"[UW_Camera] Warning: CUDA sync failed: {sync_err}")
+
+        if self._rgba_annot is None:
+            print("[UW_Camera] Annotator not initialized, skipping frame.")
+            return
+
+        try:
             raw_rgba = self._rgba_annot.get_data(device="cuda")
+        except RuntimeError as e:
+            print(f"[UW_Camera] Warning: CUDA annotator fetch failed ({e}), falling back to CPU.")
+            try:
+                raw_rgba = self._rgba_annot.get_data()  # CPU fallback
+            except Exception as cpu_err:
+                print(f"[UW_Camera] Error: CPU fallback also failed: {cpu_err}")
+                return  # Skip this frame entirely rather than crashing
+
+        try:
+            # Get Data
             depth = self._depth_annot.get_data(device="cuda") 
             
             if raw_rgba.size != 0:
-                # 2. Render Underwater Effect (Use the GPU 'depth' variable here for speed)
+                # Render Underwater Effect (Use the GPU 'depth' variable here for speed)
                 uw_image = wp.zeros_like(raw_rgba)
                 wp.launch(
                     dim=np.flip(self.get_resolution()),
@@ -267,11 +288,11 @@ class UW_Camera(Camera):
                     outputs=[uw_image]
                 )  
                 
-                # 3. Viewport Update
+                # Viewport Update
                 if self._viewport:
                     self._provider.set_bytes_data_from_gpu(uw_image.ptr, self.get_resolution())
                 
-                # 4. Data Writing
+                # Data Writing
                 if self._writing:
                     # Save RGB Image
                     # uw_image is a Warp array (RGBA), convert to numpy
@@ -302,7 +323,7 @@ class UW_Camera(Camera):
 
                     np.save(file=depth_full_path, arr=depth_data_cpu)
                 
-                # 5. ROS2 Publishing
+                # ROS2 Publishing
                 if self._enable_ros2_pub:
                     self._ros2_publish_uw_img(uw_image, sim_time)
 
