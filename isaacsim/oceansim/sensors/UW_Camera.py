@@ -249,7 +249,9 @@ class UW_Camera(Camera):
         try:
             # 1. Get Data
             raw_rgba = self._rgba_annot.get_data(device="cuda")
-            depth = self._depth_annot.get_data(device="cuda") 
+            if raw_rgba is None or raw_rgba.size == 0:
+                return
+            depth = self._depth_annot.get_data() 
             
             if raw_rgba.size != 0:
                 # 2. Render Underwater Effect (Use the GPU 'depth' variable here for speed)

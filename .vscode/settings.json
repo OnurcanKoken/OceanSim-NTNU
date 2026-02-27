@@ -1,0 +1,19 @@
+{
+    "ROS2.distro": "jazzy",
+    "python.autoComplete.extraPaths": [
+        "/home/youssief/ros-jazzy-ros1-bridge/install/ros1_bridge/lib/python3.12/site-packages",
+        "/home/youssief/jazzy_ws/install/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/opencv_tests/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/image_geometry/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/cv_bridge/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/youssief/ros-jazzy-ros1-bridge/install/ros1_bridge/lib/python3.12/site-packages",
+        "/home/youssief/jazzy_ws/install/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/opencv_tests/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/image_geometry/lib/python3.12/site-packages",
+        "/home/osim-mir/jazzy_ws/install/cv_bridge/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}

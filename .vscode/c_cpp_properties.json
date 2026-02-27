@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/youssief/ros-jazzy-ros1-bridge/install/ros1_bridge/include/**",
+        "/home/youssief/jazzy_ws/install/include/**",
+        "/home/osim-mir/jazzy_ws/install/image_geometry/include/**",
+        "/home/osim-mir/jazzy_ws/install/cv_bridge/include/**",
+        "/opt/ros/jazzy/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ros2",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++17"
+    }
+  ],
+  "version": 4
+}

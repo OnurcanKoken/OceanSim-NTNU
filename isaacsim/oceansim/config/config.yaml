@@ -12,7 +12,7 @@ paths:
 
   environment:
     - name: "mhl_water"
-      usd_path: "collected_MHL/mhl_water_cube.usd"
+      usd_path: "collected_MHL/coral_reef.usd"
       prim_path: "/Root/scene"
       collision: true
       # semantics:
@@ -20,18 +20,18 @@ paths:
       #     value: "1.0"
       #     path: "Mesh/mesh" # Relative to prim_path
 
-    - name: "rock"
-      usd_path: "collected_rock/rock.usd"
-      prim_path: "/World/rock"
-      translation: [1.0, 0.1, -1.5]
-      orientation: [0.0, 0.0, 90] # Degrees
-      collision: true
-      collision_approximation: "convexDecomposition"
-      rigid_body: true
-      semantics:
-        - type: "reflectivity"
-          value: "2.0"
-          path: "Mesh/mesh"
+    # - name: "rock"
+    #   usd_path: "collected_rock/rock.usd"
+    #   prim_path: "/World/rock"
+    #   translation: [1.0, 0.1, -1.5]
+    #   orientation: [0.0, 0.0, 90] # Degrees
+    #   collision: true
+    #   collision_approximation: "convexDecomposition"
+    #   rigid_body: true
+    #   semantics:
+    #     - type: "reflectivity"
+    #       value: "2.0"
+    #       path: "Mesh/mesh"
     # - name: "car"
     #   usd_path: "collected_MHL/car.usd"
     #   prim_path: "/World/car"
