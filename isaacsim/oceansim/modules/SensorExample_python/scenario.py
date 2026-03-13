@@ -852,8 +852,6 @@ class MHL_Sensor_Example_Scenario():
                     self.waypoints.pop(0)
             else:
                 print('Waypoints finished')
-                #generate new waypoints
-                self.generate_random_waypoints()  
         else:
             if len(self.waypoints) > 0:
                 waypoints = self.waypoints[0]

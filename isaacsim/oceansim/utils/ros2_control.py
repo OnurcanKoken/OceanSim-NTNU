@@ -358,8 +358,6 @@ class ROS2ControlReceiver:
                         self.waypoints.pop(0)
                 else:
                     print('Waypoints finished')
-                    #generate new waypoints
-                    self.generate_random_waypoints()  
 
                 
         except Exception as e:
