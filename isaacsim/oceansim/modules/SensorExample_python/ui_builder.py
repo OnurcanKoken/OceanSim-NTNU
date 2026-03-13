@@ -703,7 +703,7 @@ class UIBuilder():
                 self._ros2_control_mode_model = dropdown_builder(
                     label='ROS2 Control Mode',
                     default_val=0,
-                    items=['velocity control', 'force control'],
+                    items=['velocity control', 'force control', 'waypoint control'],
                     tooltip='Select preferred ROS2 control mode',
                     on_clicked_fn=self._on_ros2_control_mode_dropdown_clicked
                 )

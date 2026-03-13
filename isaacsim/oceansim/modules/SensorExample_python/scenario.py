@@ -50,7 +50,7 @@ class MHL_Sensor_Example_Scenario():
         self._IMU = None
         self._data_collection_mode = False
         self.data_collection_path = ""
-        self.waypoints_control_speed = False
+        self.waypoints_control_speed = True
 
 
         self._ctrl_mode = None
@@ -751,7 +751,7 @@ class MHL_Sensor_Example_Scenario():
              except Exception as e:
                  pass 
 
-    def _handle_manual_control(self):
+    def _handle_manual_control(self, step: float):
         if self._ctrl_mode=="Manual control" or self._ctrl_mode=="ROS + Manual control":
             # Get Keyboard inputs
             kb_force = self._force_cmd._base_command
@@ -768,7 +768,7 @@ class MHL_Sensor_Example_Scenario():
             user_is_controlling = np.linalg.norm(total_force) > 0.001 or np.linalg.norm(total_torque) > 0.001
 
             if self._ctrl_mode=="ROS + Manual control" and self._ros2_control_receiver is not None and not user_is_controlling:
-                    self._ros2_control_receiver.update_control()
+                    self._ros2_control_receiver.update_control(step)
 
             if user_is_controlling:
                 force_cmd = Gf.Vec3f(*total_force)
@@ -788,34 +788,67 @@ class MHL_Sensor_Example_Scenario():
                 self._rob_forceAPI.CreateForceAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
                 self._rob_forceAPI.CreateTorqueAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
                 if self._ctrl_mode == "ROS + Manual control" and self._ros2_control_receiver is not None:
-                     self._ros2_control_receiver.update_control()
+                     self._ros2_control_receiver.update_control(step)
 
-    def _handle_waypoints_control(self):
+    def _handle_waypoints_control(self, step: float):
         if self.waypoints_control_speed:
-            SPEED = 0.01  # How much to move per frame (0.0 to 1.0)
-            ROT_SPEED = 0.01
-            THRESHOLD = 0.1 # Distance units to consider "arrived"
+            SPEED = 1.0  # m/s
+            ROT_SPEED = 1.0 # rad/s
+
             if len(self.waypoints) > 0:
                 target_data = self.waypoints[0]
                 target_pos = Gf.Vec3d(target_data[0], target_data[1], target_data[2])
-                target_rot = Gf.Quatd(target_data[3], target_data[4], target_data[5], target_data[6])
+                # Gf.Quatd expects (w, x, y, z)
+                target_rot = Gf.Quatd(target_data[6], target_data[3], target_data[4], target_data[5])
 
                 current_pos_attr = self._rob.GetAttribute('xformOp:translate')
                 current_rot_attr = self._rob.GetAttribute('xformOp:orient')
                 
                 current_pos = current_pos_attr.Get()
                 current_rot = current_rot_attr.Get()
-
-                new_pos = current_pos + (target_pos - current_pos) * SPEED
                 
-                new_rot = Gf.Slerp(ROT_SPEED, current_rot, target_rot)
+                distance_vector = target_pos - current_pos
+                distance = distance_vector.GetLength()
+
+                max_move_this_frame = SPEED * step
+
+                if distance <= max_move_this_frame:
+                    new_pos = target_pos
+                    position_reached = True
+                else:
+                    # Move exactly max_move_this_frame meters toward the target
+                    direction = distance_vector / distance # Normalize vector
+                    new_pos = current_pos + (direction * max_move_this_frame)
+                    position_reached = False
+
+                # Calculate dot product to find the angle between current and target quaternions
+                dot = (current_rot.GetReal() * target_rot.GetReal() +
+                        current_rot.GetImaginary()[0] * target_rot.GetImaginary()[0] +
+                        current_rot.GetImaginary()[1] * target_rot.GetImaginary()[1] +
+                        current_rot.GetImaginary()[2] * target_rot.GetImaginary()[2])
+                
+                # Keep dot product safely in bounds [-1, 1] to avoid math errors
+                dot = max(-1.0, min(1.0, dot))
+                
+                # Calculate actual angular distance in radians (using absolute dot for shortest path)
+                angle_diff = 2.0 * np.arccos(abs(dot))
+                max_rot_this_frame = ROT_SPEED * step
+
+                if angle_diff <= max_rot_this_frame:
+                    # We will reach or pass the target rotation this frame. Snap perfectly to it.
+                    new_rot = target_rot
+                    rotation_reached = True
+                else:
+                    # Calculate exactly what percentage of the remaining angle we can cover this frame
+                    slerp_amount = max_rot_this_frame / angle_diff
+                    new_rot = Gf.Slerp(slerp_amount, current_rot, target_rot)
+                    rotation_reached = False
 
                 current_pos_attr.Set(new_pos)
                 current_rot_attr.Set(new_rot)
                 
-                distance_vector = target_pos - current_pos
-                distance = distance_vector.GetLength()
-                if distance < THRESHOLD:
+                # Only move to the next waypoint if we have actually arrived
+                if position_reached and rotation_reached:
                     self.waypoints.pop(0)
             else:
                 print('Waypoints finished')
@@ -868,17 +901,17 @@ class MHL_Sensor_Example_Scenario():
 
         # Control Logic
         if self._ctrl_mode=="Manual control" or self._ctrl_mode=="ROS + Manual control":
-            self._handle_manual_control()
+            self._handle_manual_control(step)
 
         elif self._ctrl_mode=="Waypoints":
-            self._handle_waypoints_control()
+            self._handle_waypoints_control(step)
               
         elif self._ctrl_mode=="Straight line":
             SingleRigidPrim(prim_path=get_prim_path(self._rob)).set_linear_velocity(np.array([0.5,0,0])) 
         
         elif self._ctrl_mode=="ROS control":
             if self._ros2_control_receiver is not None:
-                self._ros2_control_receiver.update_control()
+                self._ros2_control_receiver.update_control(step)
             else:
                 print("[Scenario] ROS2 Control receiver is not initialized, skipping update.")
 

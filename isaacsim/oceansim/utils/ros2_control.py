@@ -5,6 +5,7 @@ from enum import Enum
 
 from isaacsim.core.prims import SingleRigidPrim
 from isaacsim.core.utils.prims import get_prim_path
+from geometry_msgs.msg import Twist, Wrench, PoseStamped
 
 '''
 Attention:
@@ -29,6 +30,7 @@ ROS2_AVAILABLE = False
 class ROS2_CONTROL_MODE(Enum):
     VEL = 1     # velocity control mode
     FORCE = 2   # force control mode
+    WAYPOINT = 3 # waypoint control mode
 
 class ROS2ControlReceiver:
     """
@@ -54,6 +56,7 @@ class ROS2ControlReceiver:
         self._ros2_control_mode = ROS2_CONTROL_MODE.VEL  # control mode
         self._ros2_vel_node = None
         self._ros2_force_node = None
+        self._ros2_waypoint_node = None
         
         # command cache
         self.force_cmd = [0.0, 0.0, 0.0]
@@ -63,6 +66,7 @@ class ROS2ControlReceiver:
         self.last_command_time = time.time()
         self.command_timeout = 2.0
         self._update_count = 0
+        self.waypoints = []
         
         # Physics API - using scenario.py created instance
         self._force_api = None
@@ -70,7 +74,7 @@ class ROS2ControlReceiver:
         
         print(f"[{self._name}] Initialized for robot prim")
         
-    def initialize(self, enable_ros2=True, vel_topic="/oceansim/robot/vel_cmd", force_topic="/oceansim/robot/force_cmd"):
+    def initialize(self, enable_ros2=True, vel_topic="/oceansim/robot/vel_cmd", force_topic="/oceansim/robot/force_cmd", waypoint_topic="/mavros/setpoint_position/local"):
         """
         initialize reciever function
         
@@ -82,6 +86,7 @@ class ROS2ControlReceiver:
         self._enable_ros2 = enable_ros2
         self._vel_topic = vel_topic
         self._force_topic = force_topic
+        self._waypoint_topic = waypoint_topic
         
         if not self._enable_ros2:
             print(f'[{self._name}] ROS2 disabled by configuration')
@@ -157,6 +162,16 @@ class ROS2ControlReceiver:
                 self._force_callback,
                 10
             )
+
+            # Create waypoint subscriber node
+            node_name = f'oceansim_rob_waypoint_control_{self._name.lower()}'.replace(' ', '_')
+            self._ros2_waypoint_node = rclpy.create_node(node_name)
+            self._waypoint_subscriber = self._ros2_waypoint_node.create_subscription(
+                PoseStamped,
+                self._waypoint_topic,
+                self._waypoint_callback,
+                10
+            )
             
         except Exception as e:
             self._enable_ros2 = False
@@ -166,6 +181,8 @@ class ROS2ControlReceiver:
             self._ros2_control_mode = ROS2_CONTROL_MODE.VEL
         elif ctrl_mode == "force control":
             self._ros2_control_mode = ROS2_CONTROL_MODE.FORCE
+        elif ctrl_mode == "waypoint control":
+            self._ros2_control_mode = ROS2_CONTROL_MODE.WAYPOINT
     
     def _vel_callback(self, msg):
         """
@@ -215,8 +232,25 @@ class ROS2ControlReceiver:
 
         except Exception as e:
             print(f'[{self._name}] force Receive Failed: {e}')
-    
-    def update_control(self):
+
+    def _waypoint_callback(self, msg):
+        """
+        msg type: geometry_msgs/PoseStamped
+        """
+        print(f'[{self._name}] received ROS 2 msg, type: {type(msg).__name__}, position: {msg.pose.position}, orientation: {msg.pose.orientation}')
+
+        if not self._enable_ros2:
+            print(f'[{self._name}] ROS 2 is not enabled, ignore msg')
+            return
+
+        current_time = time.time()
+
+        waypoint = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z, msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
+        self.waypoints.append(waypoint)
+
+        self.last_command_time = current_time
+
+    def update_control(self, step: float):
         """
         update control
         
@@ -260,6 +294,73 @@ class ROS2ControlReceiver:
                                 self._force_api.CreateTorqueAttr().Set(torque_gf)
                             except Exception as e:
                                 print(f'[{self._name}] Force API Update Failed: {e}')
+
+            elif self._ros2_control_mode == ROS2_CONTROL_MODE.WAYPOINT: # waypoint mode
+                rclpy.spin_once(self._ros2_waypoint_node, timeout_sec=0.0)
+
+                SPEED = 1.0  # m/s
+                ROT_SPEED = 1.0 # rad/s
+
+                if len(self.waypoints) > 0:
+                    target_data = self.waypoints[0]
+                    target_pos = Gf.Vec3d(target_data[0], target_data[1], target_data[2])
+                    # Gf.Quatd expects (w, x, y, z)
+                    target_rot = Gf.Quatd(target_data[6], target_data[3], target_data[4], target_data[5])
+
+                    current_pos_attr = self._robot_prim.GetAttribute('xformOp:translate')
+                    current_rot_attr = self._robot_prim.GetAttribute('xformOp:orient')
+                    
+                    current_pos = current_pos_attr.Get()
+                    current_rot = current_rot_attr.Get()
+                    
+                    distance_vector = target_pos - current_pos
+                    distance = distance_vector.GetLength()
+
+                    max_move_this_frame = SPEED * step
+
+                    if distance <= max_move_this_frame:
+                        new_pos = target_pos
+                        position_reached = True
+                    else:
+                        # Move exactly max_move_this_frame meters toward the target
+                        direction = distance_vector / distance # Normalize vector
+                        new_pos = current_pos + (direction * max_move_this_frame)
+                        position_reached = False
+
+                    # Calculate dot product to find the angle between current and target quaternions
+                    dot = (current_rot.GetReal() * target_rot.GetReal() +
+                           current_rot.GetImaginary()[0] * target_rot.GetImaginary()[0] +
+                           current_rot.GetImaginary()[1] * target_rot.GetImaginary()[1] +
+                           current_rot.GetImaginary()[2] * target_rot.GetImaginary()[2])
+                    
+                    # Keep dot product safely in bounds [-1, 1] to avoid math errors
+                    dot = max(-1.0, min(1.0, dot))
+                    
+                    # Calculate actual angular distance in radians (using absolute dot for shortest path)
+                    angle_diff = 2.0 * np.arccos(abs(dot))
+                    max_rot_this_frame = ROT_SPEED * step
+
+                    if angle_diff <= max_rot_this_frame:
+                        # We will reach or pass the target rotation this frame. Snap perfectly to it.
+                        new_rot = target_rot
+                        rotation_reached = True
+                    else:
+                        # Calculate exactly what percentage of the remaining angle we can cover this frame
+                        slerp_amount = max_rot_this_frame / angle_diff
+                        new_rot = Gf.Slerp(slerp_amount, current_rot, target_rot)
+                        rotation_reached = False
+
+                    current_pos_attr.Set(new_pos)
+                    current_rot_attr.Set(new_rot)
+                    
+                    # Only move to the next waypoint if we have actually arrived
+                    if position_reached and rotation_reached:
+                        self.waypoints.pop(0)
+                else:
+                    print('Waypoints finished')
+                    #generate new waypoints
+                    self.generate_random_waypoints()  
+
                 
         except Exception as e:
             print(f'[{self._name}] Control Update Failed: {e}')
