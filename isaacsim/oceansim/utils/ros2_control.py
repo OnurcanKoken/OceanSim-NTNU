@@ -5,7 +5,9 @@ from enum import Enum
 
 from isaacsim.core.prims import SingleRigidPrim
 from isaacsim.core.utils.prims import get_prim_path
+from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist, Wrench, PoseStamped
+from std_msgs.msg import Header
 
 '''
 Attention:
@@ -66,7 +68,7 @@ class ROS2ControlReceiver:
         self.last_command_time = time.time()
         self.command_timeout = 2.0
         self._update_count = 0
-        self.waypoints = []
+        self.waypoint = None
         
         # Physics API - using scenario.py created instance
         self._force_api = None
@@ -74,7 +76,7 @@ class ROS2ControlReceiver:
         
         print(f"[{self._name}] Initialized for robot prim")
         
-    def initialize(self, enable_ros2=True, vel_topic="/oceansim/robot/vel_cmd", force_topic="/oceansim/robot/force_cmd", waypoint_topic="/mavros/setpoint_position/local"):
+    def initialize(self, enable_ros2=True, vel_topic="/oceansim/robot/vel_cmd", force_topic="/oceansim/robot/force_cmd", waypoint_topic="/aeplanner/nbv_setpoint"):
         """
         initialize reciever function
         
@@ -245,8 +247,7 @@ class ROS2ControlReceiver:
 
         current_time = time.time()
 
-        waypoint = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z, msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
-        self.waypoints.append(waypoint)
+        self.waypoint = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z, msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
 
         self.last_command_time = current_time
 
@@ -301,8 +302,8 @@ class ROS2ControlReceiver:
                 SPEED = 1.0  # m/s
                 ROT_SPEED = 1.0 # rad/s
 
-                if len(self.waypoints) > 0:
-                    target_data = self.waypoints[0]
+                if self.waypoint != None:
+                    target_data = self.waypoint
                     target_pos = Gf.Vec3d(target_data[0], target_data[1], target_data[2])
                     # Gf.Quatd expects (w, x, y, z)
                     target_rot = Gf.Quatd(target_data[6], target_data[3], target_data[4], target_data[5])
@@ -355,9 +356,10 @@ class ROS2ControlReceiver:
                     
                     # Only move to the next waypoint if we have actually arrived
                     if position_reached and rotation_reached:
-                        self.waypoints.pop(0)
+                        self.waypoint = None
                 else:
-                    print('Waypoints finished')
+                    pass
+                    # print('Waypoints finished')
 
                 
         except Exception as e:
