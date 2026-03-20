@@ -477,7 +477,9 @@ class ImagingSonarSensor(Camera):
                         indexToProp_array[int(id)] = idToLabels.get(id).get(property)
             return indexToProp_array
 
-        if self.scan():
+        _scan_has_returns = self.scan()
+
+        if _scan_has_returns:
             num_points = self.scan_data['pcl'].shape[0]
             # Rebuild the GPU reflectivity LUT only when the label set changes.
             # In typical runs labels are static after warm-up, so this avoids
@@ -496,6 +498,37 @@ class ImagingSonarSensor(Camera):
             normals = self.scan_data['normals']
             semantics = self.scan_data['semantics']
         else:
+            # No labelled geometry in the sonar frustum this frame.
+            # Rather than returning silently (which breaks the ROS topic stream),
+            # publish a noise-only ping so downstream consumers see a continuous
+            # data stream — consistent with how a real sonar behaves in open water.
+            self.bin_sum.zero_()
+            self.bin_count.zero_()
+            self.binned_intensity.zero_()
+            self.range_dependent_ray_noise.zero_()
+            self.gau_noise.zero_()
+            self.sonar_map.zero_()
+
+            # No real returns — skip all normalization and sonar_map kernels.
+            # make_sonar_map_* divides by the maximum intensity; with binned_intensity
+            # all-zero the maximum is also zero, causing a GPU divide-by-zero that
+            # produces NaN/inf values which render as a white image.
+            # sonar_map and binned_intensity are already zeroed above, so publishing
+            # binned_intensity directly yields a correctly black (no-return) frame.
+
+            self.id += 1
+
+            if self._viewport:
+                self._sonar_provider.set_bytes_data_from_gpu(
+                    self.make_sonar_image().ptr,
+                    [self.sonar_map.shape[1], self.sonar_map.shape[0]]
+                )
+
+            if self._enable_ros2_pub:
+                wp.synchronize()
+                self._ros2_publish_sonar_image(self.binned_intensity)
+                self.publish_pitch()
+
             return
 
         # Use pre-allocated buffers (sliced to num_points) instead of wp.empty().
@@ -597,23 +630,23 @@ class ImagingSonarSensor(Camera):
 
         # Calculate additive rayleigh noise (range dependent and mimic central beam)
 
-        wp.launch(
-            kernel=range_dependent_rayleigh_2d,
-            dim=self.bin_sum.shape,
-            inputs=[
-                self.id,   # use frame num for RNG seed increment
-                self.r,
-                self.azi,
-                self.max_range,
-                ray_noise_param,
-                central_peak,
-                central_std,
-            ],
-            outputs=[
-                self.range_dependent_ray_noise
+        # wp.launch(
+        #     kernel=range_dependent_rayleigh_2d,
+        #     dim=self.bin_sum.shape,
+        #     inputs=[
+        #         self.id,   # use frame num for RNG seed increment
+        #         self.r,
+        #         self.azi,
+        #         self.max_range,
+        #         ray_noise_param,
+        #         central_peak,
+        #         central_std,
+        #     ],
+        #     outputs=[
+        #         self.range_dependent_ray_noise
 
-            ]
-        )
+        #     ]
+        # )
 
         
         
