@@ -23,7 +23,10 @@ from isaacsim.core.utils.extensions import get_extension_path
 # Custom import
 from .scenario import MHL_Sensor_Example_Scenario
 from .global_variables import EXTENSION_DESCRIPTION, EXTENSION_TITLE, EXTENSION_LINK
-from isaacsim.oceansim.utils.assets_utils import get_scene_path, load_config, get_assets_root
+from isaacsim.oceansim.utils.assets_utils import (
+    get_scene_path, load_config, get_assets_root,
+    list_dynamics_configs, load_dynamics_config, get_dynamics_config_path
+)
 
 class UIBuilder():
     def __init__(self):
@@ -302,11 +305,11 @@ class UIBuilder():
 
     def _on_init(self):
 
-        # Robot parameters
-        self._rob_mass = 5.0 # kg
-        self._rob_angular_damping = 10.0
+        # Dynamics config — robot parameters are loaded from the selected YAML
+        self._dynamics_configs = list_dynamics_configs()
+        self._dynamics_config_name = self._dynamics_configs[0] if self._dynamics_configs else "benzon"
+        self._load_robot_params_from_dynamics()
         self._uw_yaml_path = ""
-        self._rob_linear_damping = 10.0
 
         # Sensor
         self._sonar = None
@@ -330,6 +333,28 @@ class UIBuilder():
         self._scenario = MHL_Sensor_Example_Scenario()
         
 
+
+    def _load_robot_params_from_dynamics(self):
+        """Load robot PhysX parameters from the selected dynamics config YAML."""
+        try:
+            cfg = load_dynamics_config(self._dynamics_config_name)
+            vehicle = cfg.get('vehicle', {})
+            robot = cfg.get('robot', {})
+            self._rob_mass = vehicle.get('mass', 13.5)
+            self._rob_linear_damping = robot.get('physx_linear_damping', 0.5)
+            self._rob_angular_damping = robot.get('physx_angular_damping', 0.5)
+            self._rob_disable_gravity = robot.get('disable_gravity', False)
+            self._dynamics_config_path = get_dynamics_config_path(self._dynamics_config_name)
+            print(f"[UIBuilder] Loaded robot params from '{self._dynamics_config_name}': "
+                  f"mass={self._rob_mass}kg, lin_damp={self._rob_linear_damping}, "
+                  f"ang_damp={self._rob_angular_damping}, gravity_disabled={self._rob_disable_gravity}")
+        except Exception as e:
+            print(f"[UIBuilder] Failed to load dynamics config '{self._dynamics_config_name}': {e}")
+            self._rob_mass = 13.5
+            self._rob_linear_damping = 0.5
+            self._rob_angular_damping = 0.5
+            self._rob_disable_gravity = False
+            self._dynamics_config_path = None
 
     def _setup_scene(self):
         """
@@ -438,9 +463,9 @@ class UIBuilder():
         robot_prim_path = "/World/rob"
         robot_usd_path = get_scene_path("robot")
         self._rob = add_reference_to_stage(usd_path=robot_usd_path, prim_path=robot_prim_path)
-        # Toggle rigid body and collider preset for robot, and set zero gravity to mimic underwater environment
+        # Gravity setting from dynamics config — hydrodynamic model provides buoyancy
         rob_rigidBody_API = PhysxSchema.PhysxRigidBodyAPI.Apply(get_prim_at_path(robot_prim_path))
-        rob_rigidBody_API.CreateDisableGravityAttr(True)
+        rob_rigidBody_API.CreateDisableGravityAttr(self._rob_disable_gravity)
         # Set damping of the robot
         rob_rigidBody_API.GetLinearDampingAttr().Set(self._rob_linear_damping)
         rob_rigidBody_API.GetAngularDampingAttr().Set(self._rob_angular_damping)
@@ -580,16 +605,17 @@ class UIBuilder():
     def _reset_scenario(self):
         self._scenario.teardown_scenario()
         self._scenario.setup_scenario(
-            self._rob, 
-            self._sonar, 
-            self._cams, 
-            self._DVL, 
-            self._baro, 
-            self._IMU, 
+            self._rob,
+            self._sonar,
+            self._cams,
+            self._DVL,
+            self._baro,
+            self._IMU,
             self._ctrl_mode,
             self._data_collection_mode,
             data_collection_path=self._data_collection_path,
-            uw_yaml_path=self._uw_yaml_path_field.get_value_as_string() if hasattr(self, '_uw_yaml_path_field') else ""
+            uw_yaml_path=self._uw_yaml_path_field.get_value_as_string() if hasattr(self, '_uw_yaml_path_field') else "",
+            dynamics_config_path=self._dynamics_config_path
             )
         self._scenario.setup_waypoints(
             waypoint_path=self._waypoints_path, 

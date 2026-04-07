@@ -119,6 +119,35 @@ def get_imu_metadata_filename() -> str:
     config = load_config()
     return config.get("filenames", {}).get("imu_metadata", "imu_metadata.yaml")
 
+def get_dynamics_config_dir() -> str:
+    """Returns the absolute path to the dynamics config directory."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, "config", "dynamics")
+
+def list_dynamics_configs() -> list:
+    """Returns a list of available dynamics config names (without .yaml extension), sorted."""
+    config_dir = get_dynamics_config_dir()
+    if not os.path.isdir(config_dir):
+        return []
+    return sorted(
+        os.path.splitext(f)[0]
+        for f in os.listdir(config_dir)
+        if f.endswith('.yaml')
+    )
+
+def get_dynamics_config_path(name: str) -> str:
+    """Returns the full path to a dynamics config YAML by name (without extension)."""
+    path = os.path.join(get_dynamics_config_dir(), f"{name}.yaml")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Dynamics config not found: {path}")
+    return path
+
+def load_dynamics_config(name: str) -> dict:
+    """Loads a dynamics config YAML by name and returns the parsed dict."""
+    path = get_dynamics_config_path(name)
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+
 if __name__ == "__main__":
     print("Config Path:", get_config_path())
     print("Assets Root:", get_assets_root())

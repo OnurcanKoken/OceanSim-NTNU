@@ -3,6 +3,11 @@ import numpy as np
 from pxr import Gf, PhysxSchema, UsdGeom, Usd, UsdPhysics
 import time
 import rclpy
+import os
+
+# Dynamics
+from isaacsim.oceansim.dynamics.bluerov_dynamics import BlueROVDynamics
+from isaacsim.oceansim.dynamics.thruster_model import ThrusterAllocator
 
 from geometry_msgs.msg import Quaternion, Vector3, Pose, PoseStamped, TransformStamped, Wrench
 from nav_msgs.msg import Path
@@ -241,13 +246,14 @@ class MHL_Sensor_Example_Scenario():
                 'physics_step':        0    
             }
 
-    def setup_scenario(self, rob, sonar, cams, DVL, baro, IMU, ctrl_mode,data_collection_mode, data_collection_path="", uw_yaml_path=None):
+    def setup_scenario(self, rob, sonar, cams, DVL, baro, IMU, ctrl_mode,data_collection_mode, data_collection_path="", uw_yaml_path=None, dynamics_config_path=None):
         if not rclpy.ok():
             print("[Scenario] ROS2 Context was dead. Resurrecting before sensor init...")
             rclpy.init()
 
         self._data_collection_mode = data_collection_mode
         self.data_collection_path = data_collection_path
+        self._dynamics_config_path = dynamics_config_path
         self._rob = rob
         self._sonar = sonar
         self._rob = rob
@@ -322,7 +328,76 @@ class MHL_Sensor_Example_Scenario():
             # initialize ROS2ControlReceiver
             self._setup_ros2_control()
             
+        # Initialize hydrodynamic dynamics model
+        self._init_dynamics()
+
         self._running_scenario = True
+
+    def _init_dynamics(self):
+        """Initialize the BlueROV hydrodynamic dynamics model and thruster allocator."""
+        if self._dynamics_config_path and os.path.exists(self._dynamics_config_path):
+            dynamics_config = self._dynamics_config_path
+        else:
+            dynamics_config = os.path.join(
+                os.path.dirname(__file__), '..', '..', 'config', 'dynamics', 'benzon.yaml'
+            )
+            dynamics_config = os.path.abspath(dynamics_config)
+        self._dynamics = BlueROVDynamics(dynamics_config)
+        self._thruster_allocator = ThrusterAllocator(dynamics_config)
+        self._rob_rigid_prim = SingleRigidPrim(prim_path=get_prim_path(self._rob))
+        if not hasattr(self, '_rob_forceAPI') or self._rob_forceAPI is None:
+            self._rob_forceAPI = PhysxSchema.PhysxForceAPI.Apply(self._rob)
+        print(f"[Scenario] BlueROV dynamics + thruster allocation initialized from {dynamics_config}")
+
+    def _apply_dynamics(self, step, control_wrench=None):
+        """
+        Compute and apply hydrodynamic + thruster forces for the current physics step.
+
+        Args:
+            step: Physics timestep (s).
+            control_wrench: Desired [Fx, Fy, Fz, Tx, Ty, Tz] from control input.
+                            If None, only hydrodynamics are applied (no thrust).
+        """
+        if self._dynamics is None or self._rob is None:
+            return
+
+        wt = omni.usd.get_world_transform_matrix(self._rob)
+        quat_gf = wt.ExtractRotationQuat()
+        quat_wxyz = np.array([
+            quat_gf.GetReal(),
+            quat_gf.GetImaginary()[0],
+            quat_gf.GetImaginary()[1],
+            quat_gf.GetImaginary()[2]
+        ])
+
+        lin_vel = np.array(self._rob_rigid_prim.get_linear_velocity())
+        ang_vel = np.array(self._rob_rigid_prim.get_angular_velocity())
+
+        # Thruster allocation
+        if control_wrench is not None and self._thruster_allocator is not None:
+            _, thrust_wrench = self._thruster_allocator.wrench_to_thrust(control_wrench)
+        else:
+            thrust_wrench = np.zeros(6)
+
+        # Hydrodynamic forces
+        hydro_force, hydro_torque = self._dynamics.compute_hydrodynamics(
+            quat_wxyz, lin_vel, ang_vel, step
+        )
+
+        # Total force = thruster output + hydrodynamics
+        total_force = Gf.Vec3f(
+            float(thrust_wrench[0] + hydro_force[0]),
+            float(thrust_wrench[1] + hydro_force[1]),
+            float(thrust_wrench[2] + hydro_force[2])
+        )
+        total_torque = Gf.Vec3f(
+            float(thrust_wrench[3] + hydro_torque[0]),
+            float(thrust_wrench[4] + hydro_torque[1]),
+            float(thrust_wrench[5] + hydro_torque[2])
+        )
+
+        self._rob_forceAPI.CreateForceAttr().Set(total_force)
+        self._rob_forceAPI.CreateTorqueAttr().Set(total_torque)
 
     def _setup_ros2_control(self):
         """setup ROS2 control receiver"""
@@ -542,6 +617,12 @@ class MHL_Sensor_Example_Scenario():
         if self._baro is not None:
              self._baro.cleanup()
         
+        # Reset dynamics state
+        if hasattr(self, '_dynamics') and self._dynamics is not None:
+            self._dynamics.reset()
+        if hasattr(self, '_thruster_allocator') and self._thruster_allocator is not None:
+            self._thruster_allocator.reset()
+
         # Reset simple variables
         self._time = 0.0
 
@@ -758,44 +839,60 @@ class MHL_Sensor_Example_Scenario():
              except Exception as e:
                  pass 
 
-    def _handle_manual_control(self):
-        if self._ctrl_mode=="Manual control" or self._ctrl_mode=="ROS + Manual control":
-            # Get Keyboard inputs
-            kb_force = self._force_cmd._base_command
-            kb_torque = self._torque_cmd._base_command
-            
-            # Get Joystick inputs
-            joy_force = self._joy_force._base_command
-            joy_torque = self._joy_torque._base_command
+    def _get_manual_wrench(self):
+        """
+        Get desired wrench from keyboard/gamepad inputs.
 
-            # Combine them (Summing them allows using both simultaneously)
-            total_force = kb_force + joy_force
-            total_torque = kb_torque + joy_torque
+        Returns:
+            wrench: [Fx, Fy, Fz, Tx, Ty, Tz] as numpy array, or None if no input.
+        """
+        kb_force = self._force_cmd._base_command
+        kb_torque = self._torque_cmd._base_command
+        joy_force = self._joy_force._base_command
+        joy_torque = self._joy_torque._base_command
 
-            user_is_controlling = np.linalg.norm(total_force) > 0.001 or np.linalg.norm(total_torque) > 0.001
+        total_force = kb_force + joy_force
+        total_torque = kb_torque + joy_torque
 
-            if self._ctrl_mode=="ROS + Manual control" and self._ros2_control_receiver is not None and not user_is_controlling:
-                    self._ros2_control_receiver.update_control()
+        user_is_controlling = np.linalg.norm(total_force) > 0.001 or np.linalg.norm(total_torque) > 0.001
 
-            if user_is_controlling:
-                force_cmd = Gf.Vec3f(*total_force)
-                torque_cmd = Gf.Vec3f(*total_torque)
-                self._rob_forceAPI.CreateForceAttr().Set(force_cmd)
-                self._rob_forceAPI.CreateTorqueAttr().Set(torque_cmd)
+        if user_is_controlling:
+            msg = Wrench()
+            msg.force.x = float(total_force[0])
+            msg.force.y = float(total_force[1])
+            msg.force.z = float(total_force[2])
+            msg.torque.x = float(total_torque[0])
+            msg.torque.y = float(total_torque[1])
+            msg.torque.z = float(total_torque[2])
+            self._rob_cmd_pub.publish(msg)
+            return np.concatenate([total_force, total_torque])
 
-                msg = Wrench()
-                msg.force.x = force_cmd[0]
-                msg.force.y = force_cmd[1]
-                msg.force.z = force_cmd[2]
-                msg.torque.x = torque_cmd[0]
-                msg.torque.y = torque_cmd[1]
-                msg.torque.z = torque_cmd[2]
-                self._rob_cmd_pub.publish(msg)
-            else:
-                self._rob_forceAPI.CreateForceAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-                self._rob_forceAPI.CreateTorqueAttr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-                if self._ctrl_mode == "ROS + Manual control" and self._ros2_control_receiver is not None:
-                     self._ros2_control_receiver.update_control()
+        return None
+
+    def _get_ros2_wrench(self):
+        """
+        Get desired wrench from ROS2 control receiver.
+
+        Returns:
+            wrench: [Fx, Fy, Fz, Tx, Ty, Tz] as numpy array, or None.
+        """
+        if self._ros2_control_receiver is None:
+            return None
+
+        try:
+            if self._ros2_control_receiver._ros2_force_node:
+                rclpy.spin_once(self._ros2_control_receiver._ros2_force_node, timeout_sec=0.0)
+            if self._ros2_control_receiver._ros2_vel_node:
+                rclpy.spin_once(self._ros2_control_receiver._ros2_vel_node, timeout_sec=0.0)
+        except Exception:
+            pass
+
+        force = np.array(self._ros2_control_receiver.force_cmd, dtype=np.float64)
+        torque = np.array(self._ros2_control_receiver.torque_cmd, dtype=np.float64)
+
+        if np.linalg.norm(force) > 0.001 or np.linalg.norm(torque) > 0.001:
+            return np.concatenate([force, torque])
+        return None
 
     def _handle_waypoints_control(self):
         if self.waypoints_control_speed:
@@ -867,27 +964,26 @@ class MHL_Sensor_Example_Scenario():
         # Update Sensors
         self._update_sensors(step)
 
-        # Control Logic
-        if self._ctrl_mode=="Manual control" or self._ctrl_mode=="ROS + Manual control":
-            self._handle_manual_control()
+        # Control Logic — all modes produce a desired wrench, which goes through
+        # thruster allocation + hydrodynamics in _apply_dynamics()
+        control_wrench = None
 
-        elif self._ctrl_mode=="Waypoints":
+        if self._ctrl_mode == "Manual control":
+            control_wrench = self._get_manual_wrench()
+
+        elif self._ctrl_mode == "ROS + Manual control":
+            control_wrench = self._get_manual_wrench()
+            if control_wrench is None:
+                control_wrench = self._get_ros2_wrench()
+
+        elif self._ctrl_mode == "Waypoints":
             self._handle_waypoints_control()
-              
-        elif self._ctrl_mode=="Straight line":
-            SingleRigidPrim(prim_path=get_prim_path(self._rob)).set_linear_velocity(np.array([0.5,0,0])) 
-        
-        elif self._ctrl_mode=="ROS control":
-            if self._ros2_control_receiver is not None:
-                self._ros2_control_receiver.update_control()
-            else:
-                print("[Scenario] ROS2 Control receiver is not initialized, skipping update.")
 
+        elif self._ctrl_mode == "Straight line":
+            control_wrench = np.array([10.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
+        elif self._ctrl_mode == "ROS control":
+            control_wrench = self._get_ros2_wrench()
 
-
-        
-
-        
-
-
+        # Apply thruster allocation + hydrodynamic forces (runs every step)
+        self._apply_dynamics(step, control_wrench)

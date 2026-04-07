@@ -1,0 +1,50 @@
+# BlueROV Dynamics — MarineGym (Sandøy estimates)
+# Original parameters from MarineGym/OmniDrones, 6-thruster configuration
+
+vehicle:
+  name: BlueROV (MarineGym)
+  mass: 11.5
+  volume: 0.0113459
+  water_density: 997.0
+  gravity: 9.81
+  cg: [0.0, 0.0, 0.0]
+  cb: [0.0, 0.0, -0.01]
+  inertia: [0.16, 0.16, 0.16]
+
+robot:
+  physx_linear_damping: 0.5
+  physx_angular_damping: 0.5
+  disable_gravity: false
+
+hydro_coefficients:
+  added_mass: [5.5, 12.7, 14.57, 0.12, 0.12, 0.12]
+  linear_damping: [4.03, 6.22, 5.18, 0.07, 0.07, 0.07]
+  quadratic_damping: [18.18, 21.66, 36.99, 1.55, 1.55, 1.55]
+
+thruster:
+  num_thrusters: 8
+  positions:
+    - [0.156,  0.111,  0.085]
+    - [0.156, -0.111,  0.085]
+    - [-0.156,  0.111,  0.085]
+    - [-0.156, -0.111,  0.085]
+    - [0.120,  0.218,  0.0]
+    - [0.120, -0.218,  0.0]
+    - [-0.120,  0.218,  0.0]
+    - [-0.120, -0.218,  0.0]
+  horizontal_angles: [0.7854, -0.7854, -2.3562, 2.3562]
+  thrust_config_matrix:
+    - [ 0.707,  0.707, -0.707, -0.707,  0.0,    0.0,    0.0,    0.0  ]
+    - [-0.707,  0.707, -0.707,  0.707,  0.0,    0.0,    0.0,    0.0  ]
+    - [ 0.0,    0.0,    0.0,    0.0,   -1.0,    1.0,    1.0,   -1.0  ]
+    - [ 0.06,  -0.06,   0.06,  -0.06,  -0.218, -0.218,  0.218,  0.218]
+    - [ 0.06,   0.06,  -0.06,  -0.06,   0.120, -0.120,  0.120, -0.120]
+    - [-0.1888, 0.1888, 0.1888,-0.1888,  0.0,    0.0,    0.0,    0.0  ]
+  max_thrust_per_thruster: 40.0
+  benzon_polynomial: [-140.3, 389.9, -404.1, 176.0, 8.9]
+
+ocean_current:
+  max_velocity: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  noise_scale: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+acceleration_filter_alpha: 0.3

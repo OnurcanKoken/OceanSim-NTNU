@@ -1,0 +1,51 @@
+# BlueROV2 Heavy Dynamics — Benzon et al.
+# Experimentally validated parameters from open-loop pool tests
+# Thruster geometry from Wu & Eng Table 4.2 / §4.4
+
+vehicle:
+  name: BlueROV2 Heavy (Benzon et al.)
+  mass: 13.5
+  volume: 0.0134
+  water_density: 1000.0
+  gravity: 9.82
+  cg: [0.0, 0.0, 0.0]
+  cb: [0.0, 0.0, -0.01]
+  inertia: [0.26, 0.23, 0.37]
+
+robot:
+  physx_linear_damping: 0.5
+  physx_angular_damping: 0.5
+  disable_gravity: false
+
+hydro_coefficients:
+  added_mass: [6.36, 7.12, 18.68, 0.189, 0.135, 0.222]
+  linear_damping: [13.7, 0.0, 33.0, 0.0, 0.8, 0.0]
+  quadratic_damping: [141.0, 217.0, 190.0, 1.19, 0.47, 1.5]
+
+thruster:
+  num_thrusters: 8
+  positions:
+    - [0.156,  0.111,  0.085]
+    - [0.156, -0.111,  0.085]
+    - [-0.156,  0.111,  0.085]
+    - [-0.156, -0.111,  0.085]
+    - [0.120,  0.218,  0.0]
+    - [0.120, -0.218,  0.0]
+    - [-0.120,  0.218,  0.0]
+    - [-0.120, -0.218,  0.0]
+  horizontal_angles: [0.7854, -0.7854, -2.3562, 2.3562]
+  thrust_config_matrix:
+    - [ 0.707,  0.707, -0.707, -0.707,  0.0,    0.0,    0.0,    0.0  ]
+    - [-0.707,  0.707, -0.707,  0.707,  0.0,    0.0,    0.0,    0.0  ]
+    - [ 0.0,    0.0,    0.0,    0.0,   -1.0,    1.0,    1.0,   -1.0  ]
+    - [ 0.06,  -0.06,   0.06,  -0.06,  -0.218, -0.218,  0.218,  0.218]
+    - [ 0.06,   0.06,  -0.06,  -0.06,   0.120, -0.120,  0.120, -0.120]
+    - [-0.1888, 0.1888, 0.1888,-0.1888,  0.0,    0.0,    0.0,    0.0  ]
+  max_thrust_per_thruster: 40.0
+  benzon_polynomial: [-140.3, 389.9, -404.1, 176.0, 8.9]
+
+ocean_current:
+  max_velocity: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  noise_scale: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+acceleration_filter_alpha: 0.3
