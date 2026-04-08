@@ -143,61 +143,64 @@ class MHL_Sensor_Example_Scenario():
         import carb.input
 
         self._rob_forceAPI = PhysxSchema.PhysxForceAPI.Apply(self._rob)
+        # Wrench commands in Newtons / Newton-meters.
+        # BlueROV2 Heavy max forward thrust ≈ 86 N (4 diagonal T200s).
+        # 80 N gives near-full-throttle response; adjust as needed.
         self._force_cmd = keyboard_cmd(base_command=np.array([0.0, 0.0, 0.0]),
                                   input_keyboard_mapping={
                                     # forward command
-                                    "W": [10.0, 0.0, 0.0],
+                                    "W": [85.0, 0.0, 0.0],
                                     # backward command
-                                    "S": [-10.0, 0.0, 0.0],
+                                    "S": [-85.0, 0.0, 0.0],
                                     # leftward command
-                                    "A": [0.0, 10.0, 0.0],
+                                    "A": [0.0, 85.0, 0.0],
                                     # rightward command
-                                    "D": [0.0, -10.0, 0.0],
+                                    "D": [0.0, -85.0, 0.0],
                                      # rise command
-                                    "UP": [0.0, 0.0, 10.0],
+                                    "UP": [0.0, 0.0, 60.0],
                                     # sink command
-                                    "DOWN": [0.0, 0.0, -10.0],
+                                    "DOWN": [0.0, 0.0, -60.0],
                                   })
         self._torque_cmd = keyboard_cmd(base_command=np.array([0.0, 0.0, 0.0]),
                                   input_keyboard_mapping={
                                     # yaw command (left)
-                                    "J": [0.0, 0.0, 10.0],
+                                    "J": [0.0, 0.0, 22.0],
                                     # yaw command (right)
-                                    "L": [0.0, 0.0, -10.0],
+                                    "L": [0.0, 0.0, -22.0],
                                     # pitch command (up)
-                                    "I": [0.0, -10.0, 0.0],
+                                    "I": [0.0, -14.0, 0.0],
                                     # pitch command (down)
-                                    "K": [0.0, 10.0, 0.0],
-                                    # row command (left)
-                                    "LEFT": [-10.0, 0.0, 0.0],
-                                    # row command (negative)
-                                    "RIGHT": [10.0, 0.0, 0.0],
+                                    "K": [0.0, 14.0, 0.0],
+                                    # roll command (left)
+                                    "LEFT": [-22.0, 0.0, 0.0],
+                                    # roll command (right)
+                                    "RIGHT": [22.0, 0.0, 0.0],
                                   })
         self._joy_force = gamepad_cmd(
             input_mapping={
-                carb.input.GamepadInput.LEFT_STICK_UP:    np.array([1.0, 0.0, 0.0]),   # Forward
-                carb.input.GamepadInput.LEFT_STICK_DOWN:  np.array([-1.0, 0.0, 0.0]),  # Backward
-                carb.input.GamepadInput.LEFT_STICK_LEFT:  np.array([0.0, 1.0, 0.0]),   # Left
-                carb.input.GamepadInput.LEFT_STICK_RIGHT: np.array([0.0, -1.0, 0.0]),  # Right
-                carb.input.GamepadInput.RIGHT_TRIGGER:    np.array([0.0, 0.0, 1.0]),   # Up
-                carb.input.GamepadInput.LEFT_TRIGGER:     np.array([0.0, 0.0, -1.0]),  # Down
+                carb.input.GamepadInput.LEFT_STICK_UP:    np.array([85.0, 0.0, 0.0]),   # Forward
+                carb.input.GamepadInput.LEFT_STICK_DOWN:  np.array([-85.0, 0.0, 0.0]),  # Backward
+                carb.input.GamepadInput.LEFT_STICK_LEFT:  np.array([0.0, 85.0, 0.0]),   # Left
+                carb.input.GamepadInput.LEFT_STICK_RIGHT: np.array([0.0, -85.0, 0.0]),  # Right
+                carb.input.GamepadInput.RIGHT_TRIGGER:    np.array([0.0, 0.0, 60.0]),   # Up
+                carb.input.GamepadInput.LEFT_TRIGGER:     np.array([0.0, 0.0, -60.0]),  # Down
             },
-            scale=9.0 
+            scale=1.0
         )
         
         self._joy_torque = gamepad_cmd(
             input_mapping={
                 # Pitch
-                carb.input.GamepadInput.RIGHT_STICK_UP:    np.array([0.0, -1.0, 0.0]), 
-                carb.input.GamepadInput.RIGHT_STICK_DOWN:  np.array([0.0, 1.0, 0.0]),
+                carb.input.GamepadInput.RIGHT_STICK_UP:    np.array([0.0, -14.0, 0.0]), 
+                carb.input.GamepadInput.RIGHT_STICK_DOWN:  np.array([0.0, 14.0, 0.0]),
                 # Yaw
-                carb.input.GamepadInput.RIGHT_STICK_LEFT:  np.array([0.0, 0.0, 1.0]),
-                carb.input.GamepadInput.RIGHT_STICK_RIGHT: np.array([0.0, 0.0, -1.0]),
+                carb.input.GamepadInput.RIGHT_STICK_LEFT:  np.array([0.0, 0.0, 22.0]),
+                carb.input.GamepadInput.RIGHT_STICK_RIGHT: np.array([0.0, 0.0, -22.0]),
                 # Roll
-                carb.input.GamepadInput.LEFT_SHOULDER:     np.array([-1.0, 0.0, 0.0]),
-                carb.input.GamepadInput.RIGHT_SHOULDER:    np.array([1.0, 0.0, 0.0]),
+                carb.input.GamepadInput.LEFT_SHOULDER:     np.array([-22.0, 0.0, 0.0]),
+                carb.input.GamepadInput.RIGHT_SHOULDER:    np.array([22.0, 0.0, 0.0]),
             },
-            scale=4.0
+            scale=1.0
         )
 
     def _setup_data_logging_for_sensors(self, uw_yaml_path):
@@ -347,6 +350,15 @@ class MHL_Sensor_Example_Scenario():
         self._rob_rigid_prim = SingleRigidPrim(prim_path=get_prim_path(self._rob))
         if not hasattr(self, '_rob_forceAPI') or self._rob_forceAPI is None:
             self._rob_forceAPI = PhysxSchema.PhysxForceAPI.Apply(self._rob)
+        # Pre-create force/torque attributes once to avoid recreating each physics step.
+        self._rob_forceAPI.CreateForceAttr(Gf.Vec3f(0.0, 0.0, 0.0))
+        self._rob_forceAPI.CreateTorqueAttr(Gf.Vec3f(0.0, 0.0, 0.0))
+        # Body-frame forces (worldFrameEnabled=False) and force mode (not acceleration)
+        self._rob_forceAPI.CreateWorldFrameEnabledAttr(False)
+        self._rob_forceAPI.CreateModeAttr("force")
+        # 8 T200 thrusters × ~52 N max = ~416 N; clamp well above this for safety margin
+        self._max_applied_force = 2000.0   # N
+        self._max_applied_torque = 500.0   # N·m
         print(f"[Scenario] BlueROV dynamics + thruster allocation initialized from {dynamics_config}")
 
     def _apply_dynamics(self, step, control_wrench=None):
@@ -385,19 +397,46 @@ class MHL_Sensor_Example_Scenario():
         )
 
         # Total force = thruster output + hydrodynamics
-        total_force = Gf.Vec3f(
-            float(thrust_wrench[0] + hydro_force[0]),
-            float(thrust_wrench[1] + hydro_force[1]),
-            float(thrust_wrench[2] + hydro_force[2])
-        )
-        total_torque = Gf.Vec3f(
-            float(thrust_wrench[3] + hydro_torque[0]),
-            float(thrust_wrench[4] + hydro_torque[1]),
-            float(thrust_wrench[5] + hydro_torque[2])
-        )
+        force_vec = np.array([
+            thrust_wrench[0] + hydro_force[0],
+            thrust_wrench[1] + hydro_force[1],
+            thrust_wrench[2] + hydro_force[2],
+        ])
+        torque_vec = np.array([
+            thrust_wrench[3] + hydro_torque[0],
+            thrust_wrench[4] + hydro_torque[1],
+            thrust_wrench[5] + hydro_torque[2],
+        ])
 
-        self._rob_forceAPI.CreateForceAttr().Set(total_force)
-        self._rob_forceAPI.CreateTorqueAttr().Set(total_torque)
+        # Guard against NaN/Inf — zero out forces if numerics have diverged
+        if not np.all(np.isfinite(force_vec)):
+            print("[Dynamics] WARNING: non-finite force detected, zeroing. Check dynamics state.")
+            force_vec = np.zeros(3)
+        if not np.all(np.isfinite(torque_vec)):
+            print("[Dynamics] WARNING: non-finite torque detected, zeroing. Check dynamics state.")
+            torque_vec = np.zeros(3)
+
+        # Clamp to physical limits to prevent simulation explosion
+        force_norm = np.linalg.norm(force_vec)
+        if force_norm > self._max_applied_force:
+            force_vec = force_vec * (self._max_applied_force / force_norm)
+
+        torque_norm = np.linalg.norm(torque_vec)
+        if torque_norm > self._max_applied_torque:
+            torque_vec = torque_vec * (self._max_applied_torque / torque_norm)
+
+        self._rob_forceAPI.GetForceAttr().Set(Gf.Vec3f(*force_vec.tolist()))
+        self._rob_forceAPI.GetTorqueAttr().Set(Gf.Vec3f(*torque_vec.tolist()))
+
+        # Debug: print forces every 200 steps to monitor hydrodynamics
+        if not hasattr(self, '_dyn_debug_count'):
+            self._dyn_debug_count = 0
+        self._dyn_debug_count += 1
+        if self._dyn_debug_count % 100 == 0:
+            pos = wt.ExtractTranslation()
+            print(f"[Dynamics] pos=[{pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f}]  "
+                  f"F={force_vec.round(1)}N  T={torque_vec.round(2)}Nm  "
+                  f"hydro={hydro_force.round(1)}  thrust={thrust_wrench[:3].round(1)}")
 
     def _setup_ros2_control(self):
         """setup ROS2 control receiver"""
@@ -980,7 +1019,7 @@ class MHL_Sensor_Example_Scenario():
             self._handle_waypoints_control()
 
         elif self._ctrl_mode == "Straight line":
-            control_wrench = np.array([10.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            control_wrench = np.array([80.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         elif self._ctrl_mode == "ROS control":
             control_wrench = self._get_ros2_wrench()

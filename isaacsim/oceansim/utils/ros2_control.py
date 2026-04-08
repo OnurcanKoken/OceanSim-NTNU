@@ -256,8 +256,8 @@ class ROS2ControlReceiver:
                     
                         if self._force_api:
                             try:
-                                self._force_api.CreateForceAttr().Set(force_gf)
-                                self._force_api.CreateTorqueAttr().Set(torque_gf)
+                                self._force_api.GetForceAttr().Set(force_gf)
+                                self._force_api.GetTorqueAttr().Set(torque_gf)
                             except Exception as e:
                                 print(f'[{self._name}] Force API Update Failed: {e}')
                 

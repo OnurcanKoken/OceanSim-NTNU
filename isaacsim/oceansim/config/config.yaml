@@ -12,7 +12,7 @@ paths:
 
   environment:
     - name: "mhl_water"
-      usd_path: "collected_MHL/coral_reef.usd"
+      usd_path: "collected_MHL/mhl_scaled.usd"
       prim_path: "/Root/scene"
       collision: true
       # semantics:

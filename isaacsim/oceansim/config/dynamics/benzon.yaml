@@ -5,11 +5,11 @@
 vehicle:
   name: BlueROV2 Heavy (Benzon et al.)
   mass: 13.5
-  volume: 0.0134
+  volume: 0.01360   # slightly positive buoyancy: B=133.5N > W=132.6N (net ~+0.9N upward)
   water_density: 1000.0
   gravity: 9.82
   cg: [0.0, 0.0, 0.0]
-  cb: [0.0, 0.0, -0.01]
+  cb: [0.0, 0.0, 0.02]    # CB above CG (Isaac Sim Z-up); foam flotation on top
   inertia: [0.26, 0.23, 0.37]
 
 robot:

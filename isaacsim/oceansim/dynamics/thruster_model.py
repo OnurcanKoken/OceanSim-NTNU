@@ -57,8 +57,16 @@ class ThrusterAllocator:
         # Precompute pseudoinverse: T⁺ = Tᵀ(TTᵀ)⁻¹
         self.T_pinv = np.linalg.pinv(self.T)  # shape (8, 6)
 
-        # Linear approximation for inverse mapping (command from force)
-        self._K_linear = 40.0  # Wu & Eng linear approximation
+        # Build a dense inverse map for the Benzon polynomial so that a desired
+        # per-thruster force is converted to a command that reproduces that
+        # force, instead of relying on a coarse linear approximation.
+        self._lookup_commands = np.linspace(-1.0, 1.0, 40001)
+        self._lookup_forces = _benzon_polynomial(self._lookup_commands, self.benzon_coeffs)
+        order = np.argsort(self._lookup_forces)
+        self._sorted_lookup_forces = self._lookup_forces[order]
+        self._sorted_lookup_commands = self._lookup_commands[order]
+        self._max_curve_thrust = float(self._sorted_lookup_forces[-1])
+        self._min_curve_thrust = float(self._sorted_lookup_forces[0])
 
     def reset(self):
         """Reset internal state (stateless allocator, included for API consistency)."""
@@ -81,15 +89,12 @@ class ThrusterAllocator:
         f_desired = self.T_pinv @ tau
 
         # Step 2: Convert desired forces to normalized commands V ∈ [-1, 1]
-        V_commands = f_desired / self._K_linear
+        V_commands = self._force_to_command(f_desired)
 
-        # Step 3: Saturate commands to [-1, 1]
-        V_commands = np.clip(V_commands, -1.0, 1.0)
-
-        # Step 4: Compute actual thrust via Benzon polynomial
+        # Step 3: Compute actual thrust via Benzon polynomial
         thruster_forces = _benzon_polynomial(V_commands, self.benzon_coeffs)
 
-        # Step 5: Compute actual net wrench: τ_actual = T · f_actual
+        # Step 4: Compute actual net wrench: τ_actual = T · f_actual
         net_wrench = self.T @ thruster_forces
 
         return thruster_forces, net_wrench
@@ -107,5 +112,10 @@ class ThrusterAllocator:
         """
         tau = np.asarray(desired_wrench, dtype=np.float64)
         f_desired = self.T_pinv @ tau
-        V_commands = f_desired / self._K_linear
-        return np.clip(V_commands, -1.0, 1.0)
+        return self._force_to_command(f_desired)
+
+    def _force_to_command(self, desired_forces):
+        """Map desired thruster forces to normalized commands using the inverse thrust curve."""
+        forces = np.asarray(desired_forces, dtype=np.float64)
+        forces = np.clip(forces, self._min_curve_thrust, self._max_curve_thrust)
+        return np.interp(forces, self._sorted_lookup_forces, self._sorted_lookup_commands)
