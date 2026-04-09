@@ -100,6 +100,8 @@ class BlueROVDynamics:
         self.D_quadratic = np.diag(self.quadratic_damping_diag)
 
         # Ocean current
+        # TODO: Model the ocean currents as a spatiotemporal flow field rather than a constant velocity with noise.
+
         self.max_flow_vel = np.array(current['max_velocity'], dtype=np.float64)
         self.flow_noise_scale = np.array(current['noise_scale'], dtype=np.float64)
         self.flow_vel = np.random.rand(6) * self.max_flow_vel

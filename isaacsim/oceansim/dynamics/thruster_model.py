@@ -86,13 +86,13 @@ class ThrusterAllocator:
         tau = np.asarray(desired_wrench, dtype=np.float64)
 
         # Step 1: Allocate desired wrench to per-thruster forces via pseudoinverse
-        f_desired = self.T_pinv @ tau
+        f_desired = self.T_pinv @ tau # in Newtons, shape (8,)
 
         # Step 2: Convert desired forces to normalized commands V ∈ [-1, 1]
-        V_commands = self._force_to_command(f_desired)
+        V_commands = self._force_to_command(f_desired) # shape (8,)
 
         # Step 3: Compute actual thrust via Benzon polynomial
-        thruster_forces = _benzon_polynomial(V_commands, self.benzon_coeffs)
+        thruster_forces = _benzon_polynomial(V_commands, self.benzon_coeffs) 
 
         # Step 4: Compute actual net wrench: τ_actual = T · f_actual
         net_wrench = self.T @ thruster_forces

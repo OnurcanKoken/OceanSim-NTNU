@@ -357,6 +357,11 @@ class MHL_Sensor_Example_Scenario():
         self._rob_forceAPI.CreateWorldFrameEnabledAttr(False)
         self._rob_forceAPI.CreateModeAttr("force")
         # 8 T200 thrusters × ~52 N max = ~416 N; clamp well above this for safety margin
+        # TODO: consider making these limits configurable via the dynamics YAML file and 
+        # calibrating them based on the actual thruster configuration and max thrust curve.
+        # These limits are for the max net wrench applied to the robot, which includes both 
+        # thruster output and hydrodynamic forces. The actual thruster commands will be further 
+        # limited by the ThrusterAllocator to ensure they don't exceed physical capabilities.
         self._max_applied_force = 2000.0   # N
         self._max_applied_torque = 500.0   # N·m
         print(f"[Scenario] BlueROV dynamics + thruster allocation initialized from {dynamics_config}")
@@ -387,7 +392,7 @@ class MHL_Sensor_Example_Scenario():
 
         # Thruster allocation
         if control_wrench is not None and self._thruster_allocator is not None:
-            _, thrust_wrench = self._thruster_allocator.wrench_to_thrust(control_wrench)
+            thruster_forces, thrust_wrench = self._thruster_allocator.wrench_to_thrust(control_wrench)
         else:
             thrust_wrench = np.zeros(6)
 
@@ -420,10 +425,12 @@ class MHL_Sensor_Example_Scenario():
         force_norm = np.linalg.norm(force_vec)
         if force_norm > self._max_applied_force:
             force_vec = force_vec * (self._max_applied_force / force_norm)
+            print(f"[Dynamics] Applied force clamped from {force_norm:.1f}N to {self._max_applied_force:.1f}N")
 
         torque_norm = np.linalg.norm(torque_vec)
         if torque_norm > self._max_applied_torque:
             torque_vec = torque_vec * (self._max_applied_torque / torque_norm)
+            print(f"[Dynamics] Applied torque clamped from {torque_norm:.1f}Nm to {self._max_applied_torque:.1f}Nm")
 
         self._rob_forceAPI.GetForceAttr().Set(Gf.Vec3f(*force_vec.tolist()))
         self._rob_forceAPI.GetTorqueAttr().Set(Gf.Vec3f(*torque_vec.tolist()))
@@ -434,10 +441,12 @@ class MHL_Sensor_Example_Scenario():
         self._dyn_debug_count += 1
         if self._dyn_debug_count % 100 == 0:
             pos = wt.ExtractTranslation()
-            print(f"[Dynamics] pos=[{pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f}]  "
-                  f"F={force_vec.round(1)}N  T={torque_vec.round(2)}Nm  "
-                  f"hydro={hydro_force.round(1)}  thrust={thrust_wrench[:3].round(1)}")
-
+            print(f"[Dynamics] pos=[{pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f}]\n")
+            print( f"Hydro Force={hydro_force.round(1)}N  Hydro Torque={hydro_torque.round(1)}Nm\n"
+                  f"  Thruster Force={thrust_wrench[:3].round(1)}N  Thruster Torque={thrust_wrench[3:].round(1)}Nm\n"
+                  f"F={force_vec.round(1)}N  T={torque_vec.round(2)}Nm \n")
+            print(f"Thruster forces: {thruster_forces.round(1)}N\n")
+            
     def _setup_ros2_control(self):
         """setup ROS2 control receiver"""
         if not ROS2_CONTROL_AVAILABLE:
