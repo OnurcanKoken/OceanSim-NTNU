@@ -46,6 +46,9 @@ class ThrusterAllocator:
 
         tcfg = cfg['thruster']
         self.num_thrusters = tcfg['num_thrusters']
+        # TODO: max_thrust is not used directly for allocation since we apply the nonlinear Benzon 
+        # curve and a lookup table to ensure commands are within physical limits. However, it's 
+        # useful for sanity checks and could be used to set the bounds of the lookup table.
         self.max_thrust = tcfg['max_thrust_per_thruster']
         self.benzon_coeffs = tcfg['benzon_polynomial']
 
