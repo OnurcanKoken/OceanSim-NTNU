@@ -394,6 +394,7 @@ class MHL_Sensor_Example_Scenario():
         if control_wrench is not None and self._thruster_allocator is not None:
             thruster_forces, thrust_wrench = self._thruster_allocator.wrench_to_thrust(control_wrench)
         else:
+            thruster_forces = np.zeros(self._thruster_allocator.num_thrusters if self._thruster_allocator is not None else 0)
             thrust_wrench = np.zeros(6)
 
         # Hydrodynamic forces
