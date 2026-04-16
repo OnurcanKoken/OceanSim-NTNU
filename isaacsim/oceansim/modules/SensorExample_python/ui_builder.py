@@ -567,7 +567,7 @@ class UIBuilder():
         if self._use_DVL:
             from isaacsim.oceansim.sensors.DVLsensor import DVLsensor
 
-            self._DVL = DVLsensor(max_range=10)
+            self._DVL = DVLsensor(max_range=10, freq=10)
             self._DVL.attachDVL(rigid_body_path=robot_prim_path,
                                 translation=self._DVL_trans)
             # self._DVL.add_debug_lines()

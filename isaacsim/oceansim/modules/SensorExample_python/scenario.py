@@ -226,6 +226,8 @@ class MHL_Sensor_Example_Scenario():
             sensor_name = "barometer_sensor"
             sensor_path = self._data_collector.collect_data(name=sensor_name)
             self._baro_reading = 101325.0 # atmospheric pressure (Pa)
+            self._baro_dt = 1.0 / 10.0  # 10 Hz
+            self._baro_elapsed_time = 0.0
             self._baro.init_logging(sensor_path)
 
         # Ground Truth (Trajectory)
@@ -289,6 +291,8 @@ class MHL_Sensor_Example_Scenario():
                 self._DVL_reading = [0.0, 0.0, 0.0]
             if self._baro is not None:
                 self._baro_reading = 101325.0 # atmospheric pressure (Pa)
+                self._baro_dt = 1.0 / 10.0  # 10 Hz
+                self._baro_elapsed_time = 0.0
             if self._IMU is not None:
                 self._IMU.initialize()
                 self._IMU_reading = {
@@ -870,12 +874,15 @@ class MHL_Sensor_Example_Scenario():
                  if self._data_collection_mode:
                      self._DVL.log_data(self._time, self._DVL_reading)
 
-        # BARO UPDATE (Fast - 200 Hz)
+        # BARO UPDATE (10 Hz)
         if self._baro is not None:
-            self._baro_reading = self._baro.get_pressure()
-            self._baro.publish_ros2(self._time, self._baro_reading)
-            if self._data_collection_mode:
-                self._baro.log_data(self._time, self._baro_reading)
+            self._baro_elapsed_time += step
+            if self._baro_elapsed_time >= self._baro_dt:
+                self._baro_elapsed_time = 0.0
+                self._baro_reading = self._baro.get_pressure()
+                self._baro.publish_ros2(self._time, self._baro_reading)
+                if self._data_collection_mode:
+                    self._baro.log_data(self._time, self._baro_reading)
 
         # Ground Truth Logging
         if self._data_collection_mode and self._rob is not None and hasattr(self, '_gt_csv_writer') and self._gt_csv_writer:
