@@ -173,7 +173,7 @@ class ROS2ControlReceiver:
         
         include linear and angular velocity
         """
-        print(f'[{self._name}] recieve ROS2 msg, type: {type(msg).__name__}, linear: {msg.linear}, angular: {msg.angular}')
+        # print(f'[{self._name}] recieve ROS2 msg, type: {type(msg).__name__}, linear: {msg.linear}, angular: {msg.angular}')
         
         if not self._enable_ros2:
             print(f'[{self._name}] ROS2 is not enabled, ignore msg')
@@ -198,7 +198,7 @@ class ROS2ControlReceiver:
         
         include force and torque
         """
-        print(f'[{self._name}] recieve ROS2 msg, type: {type(msg).__name__}, force: {msg.force}, torque: {msg.torque}')
+        # print(f'[{self._name}] recieve ROS2 msg, type: {type(msg).__name__}, force: {msg.force}, torque: {msg.torque}')
 
         if not self._enable_ros2:
             print(f'[{self._name}] ROS2 is not enabled, ignore msg')
