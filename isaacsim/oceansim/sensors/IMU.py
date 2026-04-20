@@ -1,6 +1,6 @@
 from isaacsim.sensors.physics import IMUSensor
 from sensor_msgs.msg import Imu
-from geometry_msgs.msg import Quaternion, Vector3
+from geometry_msgs.msg import Quaternion, Vector3, PoseStamped
 import numpy as np
 import rclpy
 import carb
@@ -172,9 +172,11 @@ class IMU(IMUSensor):
 
         return imu_data
 
-    def initialize(self, 
+    def initialize(self,
                     enable_ros2_pub=True,
                     imu_topic="/oceansim/robot/imu",
+                    pose_topic="/oceansim/robot/imu_pose",
+                    pose_frame_id="mimosa_map",
                     ros2_pub_frequency=200,
                     orientation_covariance=np.zeros((3,3)).reshape(-1) * 1e-6,
                     angular_velocity_covariance=np.zeros((3,3)).reshape(-1) * 1e-4,
@@ -195,8 +197,11 @@ class IMU(IMUSensor):
         # ROS2 configuration
         self._enable_ros2_pub = enable_ros2_pub
         self._imu_topic = imu_topic
+        self._pose_topic = pose_topic
+        self._pose_frame_id = pose_frame_id
         self._last_publish_time = 0.0
         self._ros2_pub_frequency = ros2_pub_frequency     # publish frequency, hz
+        self._pose_pub = None
         self._setup_ros2_publisher()
         
         carb.log_info(f'[{self.name}] Initialized successfully.')
@@ -218,11 +223,16 @@ class IMU(IMUSensor):
             node_name = f'oceansim_rob_imu_pub_{self.name.lower()}'.replace(' ', '_')
             self._ros2_imu_node = rclpy.create_node(node_name)
             self._imu_pub = self._ros2_imu_node.create_publisher(
-                Imu, 
+                Imu,
                 self._imu_topic,
                 10
             )
-        
+            self._pose_pub = self._ros2_imu_node.create_publisher(
+                PoseStamped,
+                self._pose_topic,
+                10
+            )
+
         except Exception as e:
             print(f'[{self.name}] ROS2 IMU publisher setup failed: {e}')
 
@@ -271,6 +281,22 @@ class IMU(IMUSensor):
             
             # Publish the message
             self._imu_pub.publish(msg)
+
+            # Publish world pose for RViz visualization. get_world_pose() returns
+            # (position_xyz, orientation_wxyz) from the inherited XformPrim.
+            if self._pose_pub is not None:
+                pos, quat_wxyz = self.get_world_pose()
+                pose_msg = PoseStamped()
+                pose_msg.header.stamp = msg.header.stamp
+                pose_msg.header.frame_id = self._pose_frame_id
+                pose_msg.pose.position.x = float(pos[0])
+                pose_msg.pose.position.y = float(pos[1])
+                pose_msg.pose.position.z = float(pos[2])
+                pose_msg.pose.orientation.w = float(quat_wxyz[0])
+                pose_msg.pose.orientation.x = float(quat_wxyz[1])
+                pose_msg.pose.orientation.y = float(quat_wxyz[2])
+                pose_msg.pose.orientation.z = float(quat_wxyz[3])
+                self._pose_pub.publish(pose_msg)
 
             rclpy.spin_once(self._ros2_imu_node, timeout_sec=0.0)
 
@@ -382,7 +408,11 @@ class IMU(IMUSensor):
                 if self._imu_pub is not None:
                     self._ros2_imu_node.destroy_publisher(self._imu_pub)
                     self._imu_pub = None
-                
+
+                if self._pose_pub is not None:
+                    self._ros2_imu_node.destroy_publisher(self._pose_pub)
+                    self._pose_pub = None
+
                 # Destroy node
                 if self._ros2_imu_node is not None:
                     self._ros2_imu_node.destroy_node()
